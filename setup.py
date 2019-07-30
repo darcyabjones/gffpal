@@ -99,7 +99,9 @@ setup(
     # pip to create the appropriate form of executable for the target platform.
     entry_points={
         'console_scripts': [
-            'catastrophy=catas:main',
+            'gff2hints=gffpal.scripts.gff2hints:main',
+            'trnascan2gff=gffpal.scripts.trnascan2gff:main',
+            'rnammer2gff=gffpal.scripts.rnammer2gff:main',
         ],
     },
 )

@@ -8,9 +8,9 @@ from typing import Dict
 from typing import Union
 from typing import Sequence
 from typing import Mapping
+from typing import Iterator
 
 from enum import Enum
-from copy import deepcopy
 from collections import defaultdict
 
 from gffpal.attributes import GFFAttributes
@@ -411,19 +411,86 @@ class GFF(object):
             self.add_record(record)
         return
 
-    def traverse_children(self, key):
-        seen = {key}
-        to_visit = deepcopy(self.children.get(key, seen))
+    def traverse_children(
+        self,
+        records: Optional[GFFRecord] = None,
+        sort: bool = False,
+    ) -> Iterator[GFFRecord]:
+        """ A depth first traversal of the GFF from parents to children.
+
+        Optionally sort the children by position.
+        """
+
+        seen = set()
+        if records is None:
+            to_visit = [f for f in reversed(self.inner) if len(f.parents) == 0]
+        else:
+            to_visit = [f for f in reversed(records)]
+
+        if sort:
+            to_visit.sort(
+                key=lambda f: (f.seqid, f.start, f.end, f.type),
+                reverse=True,
+            )
 
         while len(to_visit) > 0:
-            child = to_visit.pop()
-            if child in seen:
+            node = to_visit.pop()
+
+            # NB uses id() for hashing
+            if node in seen:
                 continue
             else:
-                seen.add(child)
+                seen.add(node)
 
-            to_visit.update(deepcopy(self.children.get(child, set())))
-        return GFF([self.inner[s] for s in seen])
+            children = list(node.children)
+            if sort:
+                children.sort(
+                    key=lambda f: (f.seqid, f.start, f.end, f.type),
+                    reverse=True
+                )
+
+            to_visit.extend(children)
+            yield node
+
+        return None
+
+    def traverse_parents(
+        self,
+        records: Optional[GFFRecord] = None,
+        sort: bool = False,
+    ) -> Iterator[GFFRecord]:
+        """ A depth first traversal of the GFF from children to parents.
+
+        Optionally sort the parents by position.
+        """
+
+        seen = set()
+        if records is None:
+            to_visit = [f for f in self.inner if len(f.children) == 0]
+        else:
+            to_visit = [f for f in records]  # Quick and dirty copy
+
+        if sort:
+            to_visit.sort(key=lambda f: (f.seqid, f.start, f.end, f.type))
+
+        while len(to_visit) > 0:
+            node = to_visit.pop()
+
+            if node in seen:
+                continue
+            else:
+                seen.add(node)
+
+            parents = list(node.parents)
+            if sort:
+                parents.sort(
+                    key=lambda f: (f.seqid, f.start, f.end, f.type),
+                )
+
+            to_visit.extend(parents)
+            yield node
+
+        return None
 
     @classmethod
     def parse(

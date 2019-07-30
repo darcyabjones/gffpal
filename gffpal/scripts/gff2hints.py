@@ -1,3 +1,8 @@
+import sys
+import argparse
+
+from gffpal.gff import GFF
+from gffpal.attributes import GFFAttributes
 
 SOURCES = ["M", "E", "P", "RM", "W", "XNT", "C", "D", "T", "R", "PB"]
 
@@ -341,13 +346,13 @@ def main():
 
     gff_to_hints.update(parse_custom_features(args.feature))
 
-    gff = GFF.from_file(args.infile)
-    for group in gff.select_type(args.group_level):
-        group_name = group.attributes.id
+    gff = GFF.parse(args.infile)
+    for parent in gff.select_type(args.group_level):
+        group_name = parent.attributes.id
         if group_name is None:
-            group_name = group.id
+            raise ValueError("Parent doesn't have an id.")
 
-        for feature in gff.get_children(group.id):
+        for feature in gff.traverse_children([parent]):
             if feature.type in gff_to_hints:
                 type_ = gff_to_hints[feature.type]
             else:
@@ -382,9 +387,11 @@ def main():
                 priority = args.nonexon_priority
 
             attr = GFFAttributes(
-                source=args.source,
-                group=group_name,
-                priority=args.priority + priority
+                custom=dict(
+                    source=args.source,
+                    group=group_name,
+                    priority=args.priority + priority
+                )
             )
             feature.attributes = attr
             print(feature, file=args.outfile)

@@ -299,6 +299,9 @@ class GFFAttributes(object):
         strip_quote: bool = False,
         unescape: bool = False,
     ):
+        if string.strip() in (".", ""):
+            return cls()
+
         fields = (
             f.split("=", maxsplit=1)
             for f
