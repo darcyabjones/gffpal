@@ -1,17 +1,15 @@
 from enum import Enum
+from typing import cast
 from typing import Optional
-from typing import TypeVar
 from typing import List
 from typing import Dict
 from typing import Union
 from typing import Mapping
 from typing import Sequence
 
-TargetT = TypeVar("TargetT", bound="Target")
-TargetStrandT = TypeVar("TargetStrandT", bound="TargetStrand")
-T = TypeVar("T")
+from gffpal.higher import fmap
 
-_KEY_TO_ATTR = {
+_KEY_TO_ATTR: Dict[str, str] = {
     "ID": "id",
     "Name": "name",
     "Alias": "alias",
@@ -25,9 +23,9 @@ _KEY_TO_ATTR = {
     "Is_circular": "is_circular",
 }
 
-_ATTR_TO_KEY = {v: k for k, v in _KEY_TO_ATTR.items()}
+_ATTR_TO_KEY: Dict[str, str] = {v: k for k, v in _KEY_TO_ATTR.items()}
 
-_WRITE_ORDER = [
+_WRITE_ORDER: List[str] = [
     "ID",
     "Name",
     "Alias",
@@ -46,15 +44,15 @@ class TargetStrand(Enum):
     PLUS = 0
     MINUS = 1
 
-    def __str__(self):
+    def __str__(self) -> None:
         into_str_map = ["+", "-"]
         return into_str_map[self.value]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "TargetStrand.{self.name}"
 
     @classmethod
-    def parse(cls, string: str) -> TargetStrandT:
+    def parse(cls, string: str) -> TargetStrand:  # noqa
         from_str_map = {
             "+": cls.PLUS,
             "-": cls.MINUS,
@@ -82,8 +80,8 @@ class Target(object):
         target_id: str,
         start: int,
         end: int,
-        strand: Optional[TargetStrandT] = None,
-    ):
+        strand: Optional[TargetStrand] = None,
+    ) -> None:
         self.target_id = target_id
         self.start = start
         self.end = end
@@ -117,7 +115,7 @@ class Target(object):
             )
 
     @classmethod
-    def parse(cls, string: str) -> TargetT:
+    def parse(cls, string: str) -> Target:  #noqa
         split_string = string.strip().split(" ")
 
         if len(split_string) < 3:
@@ -155,7 +153,7 @@ class GapCode(Enum):
         return f"GapCode.{self.name}"
 
     @classmethod
-    def parse(cls, string: str):
+    def parse(cls, string: str) -> GapCode:  # noqa
         from_str_map = {
             "M": cls.MATCH,
             "I": cls.INSERT,
@@ -182,15 +180,15 @@ class GapElement(object):
         self.length = length
         return
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "{}{}".format(self.code, self.length)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         code = repr(self.code)
         return f"GapElement({code}, {self.length})"
 
     @classmethod
-    def parse(cls, string: str):
+    def parse(cls, string: str) -> GapElement:  # noqa
         string = string.strip()
         code = GapCode.parse(string[:1])
         length = int(string[1:])
@@ -199,21 +197,21 @@ class GapElement(object):
 
 class Gap(object):
 
-    def __init__(self, elements: Sequence[GapElement]):
+    def __init__(self, elements: Sequence[GapElement]) -> None:
         self.elements = list(elements)
         return
 
-    def __str__(self):
+    def __str__(self) -> str:
         return " ".join(map(str, self.elements))
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         elems = repr(list(self.elements))
         return f"Gap({elems})"
 
     @classmethod
-    def parse(cls, string: str):
+    def parse(cls, string: str) -> Gap:  # noqa
         split_string = string.strip().split(" ")
-        elements = (GapElement.parse(s) for s in split_string if s != '')
+        elements = [GapElement.parse(s) for s in split_string if s != '']
         return cls(elements)
 
 
@@ -261,36 +259,24 @@ class GFFAttributes(object):
         self.custom = dict(custom)
         return
 
-
     @classmethod
-    def _parse_elem(
+    def _parse_list_of_strings(
         cls,
-        key: str,
         value: str,
         strip_quote: bool = False,
-        unescape: bool = False,
-    ) -> str:
+        unescape: bool = False
+    ) -> List[str]:
+        """ Parses a gff attribute list of strings. """
+        if value == "":
+            return []
+
         if strip_quote:
             value = value.strip("\"' ")
 
-        if key in ("Alias", "Parent", "Derives_from",
-                   "Note", "Dbxref", "Ontology_term"):
-            if unescape:
-                return [cls._attr_unescape(v) for v in parse_attr_list(value)]
-            else:
-                return parse_attr_list(value)
-
         if unescape:
-            value = cls._attr_unescape(value)
-
-        if key == "Target":
-            return Target.parse(value)
-        elif key == "Gap":
-            return Gap.parse(value)
-        elif key == "Is_circular":
-            return parse_bool(value)
+            return [cls._attr_unescape(v) for v in parse_attr_list(value)]
         else:
-            return str(value)
+            return parse_attr_list(value)
 
     @classmethod
     def parse(
@@ -298,7 +284,7 @@ class GFFAttributes(object):
         string: str,
         strip_quote: bool = False,
         unescape: bool = False,
-    ):
+    ) -> GFFAttributes:  #noqa
         if string.strip() in (".", ""):
             return cls()
 
@@ -308,31 +294,85 @@ class GFFAttributes(object):
             in string.strip(" ;").split(";")
         )
 
-        kvpairs = {
+        kvpairs: Dict[str, str] = {
             k.strip(): v.strip()
             for k, v
             in fields
         }
 
-        kwargs = {}
+        id = kvpairs.pop("ID", None)
+        name = kvpairs.pop("Name", None)
 
-        for key, attr in _KEY_TO_ATTR.items():
-            value = kvpairs.pop(key, None)
-            if value is not None:
-                kwargs[attr] = cls._parse_elem(
-                    key,
-                    value,
-                    strip_quote=strip_quote,
-                    unescape=unescape
-                )
+        alias = cls._parse_list_of_strings(
+            kvpairs.pop("Alias", ""),
+            strip_quote,
+            unescape
+        )
 
-        return cls(**kwargs, custom=kvpairs)
+        parent = cls._parse_list_of_strings(
+            kvpairs.pop("Parent", ""),
+            strip_quote,
+            unescape
+        )
 
-    def strip_quotes(self):
+        target: Optional[Target] = fmap(
+            Target.parse,
+            fmap(
+                lambda x: cls._attr_unescape(x) if unescape else x,
+                kvpairs.pop("Target", None)
+            )
+        )
 
-        return
+        gap = fmap(
+            Gap.parse,
+            fmap(
+                lambda x: cls._attr_unescape(x) if unescape else x,
+                kvpairs.pop("Gap", None)
+            )
+        )
 
-    def __str__(self):
+        derives_from = cls._parse_list_of_strings(
+            kvpairs.pop("Derives_from", ""),
+            strip_quote,
+            unescape
+        )
+
+        note = cls._parse_list_of_strings(
+            kvpairs.pop("Note", ""),
+            strip_quote,
+            unescape
+        )
+
+        dbxref = cls._parse_list_of_strings(
+            kvpairs.pop("Dbxref", ""),
+            strip_quote,
+            unescape
+        )
+
+        ontology_term = cls._parse_list_of_strings(
+            kvpairs.pop("Ontology_term", ""),
+            strip_quote,
+            unescape
+        )
+
+        is_circular = fmap(parse_bool, kvpairs.pop("Is_circular", None))
+
+        return cls(
+            id,
+            name,
+            alias,
+            parent,
+            target,
+            gap,
+            derives_from,
+            note,
+            dbxref,
+            ontology_term,
+            is_circular,
+            kvpairs
+        )
+
+    def __str__(self) -> str:
         keys = []
         keys.extend(_WRITE_ORDER)
         keys.extend(self.custom.keys())
@@ -376,8 +416,8 @@ class GFFAttributes(object):
 
             parameters.append(f"{param}={value}")
 
-        parameters = ", ".join(parameters)
-        return f"GFFAttributes({parameters})"
+        joined_parameters = ", ".join(parameters)
+        return f"GFFAttributes({joined_parameters})"
 
     @staticmethod
     def _attr_escape(string: str) -> str:
@@ -422,7 +462,7 @@ class GFFAttributes(object):
         if key in _KEY_TO_ATTR:
             setattr(self, _KEY_TO_ATTR[key], value)
         else:
-            self.custom[key] = value
+            self.custom[key] = cast(str, value)  # Cast is for mypy
         return
 
     def __delitem__(self, key: str) -> None:
@@ -448,7 +488,7 @@ class GFFAttributes(object):
         self,
         key: str,
         default: Union[str, Sequence[str], Target, Gap, bool, None] = None,
-    ) -> Union[str, Sequence[str], Target, Gap, bool, None, T]:
+    ) -> Union[str, Sequence[str], Target, Gap, bool, None]:
         """ Gets an atrribute or element from the custom dict. """
 
         if key in _KEY_TO_ATTR:
@@ -460,7 +500,7 @@ class GFFAttributes(object):
         self,
         key: str,
         default: Union[str, Sequence[str], Target, Gap, bool, None] = None,
-    ) -> Union[str, Sequence[str], Target, Gap, bool, None, T]:
+    ) -> Union[str, Sequence[str], Target, Gap, bool, None]:
         """ Removes an item from the attributes and returns its value.
 
         If the item is one of the reserved GFF3 terms, the
