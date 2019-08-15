@@ -3,6 +3,7 @@
 from typing import TypeVar
 from typing import Optional
 from typing import Callable
+from typing import Union
 
 
 T = TypeVar("T")
@@ -28,7 +29,8 @@ def applicative(
     return
 
 
-def or_else(default: T, option: Optional[T]) -> T:
+def or_else(default: U, option: Optional[T]) -> Union[T, U]:
+    """ Replaces None with some default value. """
     if option is None:
         return default
     else:

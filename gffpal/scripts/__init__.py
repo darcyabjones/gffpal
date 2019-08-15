@@ -1,7 +1,11 @@
 import sys
 import argparse
 
-"""
+
+from gffpal.exceptions import GPException, ECode
+from gffpal.scripts.hints import hints, cli_hints
+
+
 def cli(prog, args):
 
     parser = argparse.ArgumentParser(
@@ -11,19 +15,12 @@ def cli(prog, args):
 
     subparsers = parser.add_subparsers(dest='subparser_name')
 
-    encode_subparser = subparsers.add_parser(
-        "encode",
-        help="Encode a files ids using some strategy."
+    hints_subparser = subparsers.add_parser(
+        "hints",
+        help="Construct augustus hints files from various gff formats."
     )
 
-    cli_encode(encode_subparser)
-
-    decode_subparser = subparsers.add_parser(
-        "decode",
-        help=("Decodes a file given a mapping file.")
-    )
-
-    cli_decode(decode_subparser)
+    cli_hints(hints_subparser)
 
     parsed = parser.parse_args(args)
 
@@ -37,13 +34,11 @@ def cli(prog, args):
 def main():
     args = cli(prog=sys.argv[0], args=sys.argv[1:])
     try:
-        if args.subparser_name == "encode":
-            encode(args)
-        elif args.subparser_name == "decode":
-            decode(args)
+        if args.subparser_name == "hints":
+            hints(args)
         else:
             raise ValueError("I shouldn't reach this point ever")
-    except SRException as e:
+    except GPException as e:
         print(f"Error: {e.msg}")
         sys.exit(e.ecode)
     except BrokenPipeError:
@@ -51,7 +46,7 @@ def main():
         sys.exit(0)
     except KeyboardInterrupt:
         print("Received keyboard interrupt. Exiting.", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(ECode.SIGINT)
     except EnvironmentError as e:
         print((
             "Encountered a system error.\n"
@@ -67,4 +62,3 @@ def main():
         ), file=sys.stderr)
         raise e
     return
-"""

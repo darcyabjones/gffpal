@@ -1,8 +1,15 @@
 import sys
 import argparse
+from copy import copy
 
-from gffpal.gff import GFF
+from typing import List
+from typing import Dict
+from typing import Optional
+
+from gffpal.gff import GFF, GFFRecord
 from gffpal.attributes import GFFAttributes
+from gffpal.exceptions import GPCLIError, GPMissingID
+from gffpal.higher import fmap, applicative
 
 SOURCES = ["M", "E", "P", "RM", "W", "XNT", "C", "D", "T", "R", "PB"]
 
@@ -117,29 +124,23 @@ HINT_TYPE = [
 ]
 
 
-def cli(prog, args):
-    parser = argparse.ArgumentParser(
-        prog=prog,
-        description="""
-        """
-    )
-
+def cli_hints(parser):
     parser.add_argument(
         "infile",
-        default=sys.stdin,
         type=argparse.FileType('r'),
-        help="Input fasta files. Use '-' for stdin.",
+        help="Input gff3 file. Use '-' for stdin.",
     )
 
     parser.add_argument(
         "-o", "--outfile",
         type=argparse.FileType('w'),
         default=sys.stdout,
-        help="Output fasta file path. Default stdout.",
+        help="Output gff3 hints file path. Default stdout.",
     )
 
     parser.add_argument(
         "-s", "--source",
+        type=str,
         default="M",
         help=f"The type of hint to create. Usually one of {SOURCES}.",
     )
@@ -154,6 +155,7 @@ def cli(prog, args):
     parser.add_argument(
         "-g", "--group-level",
         default="mRNA",
+        type=str,
         help="The level to group features at.",
     )
 
@@ -161,6 +163,7 @@ def cli(prog, args):
         "-c", "--cds",
         default="CDSpart",
         choices=HINT_TYPE,
+        type=str,
         help="The type to map CDS features to."
     )
 
@@ -168,6 +171,7 @@ def cli(prog, args):
         "-i", "--intron",
         default="intron",
         choices=HINT_TYPE,
+        type=str,
         help="The type to map intron features to."
     )
 
@@ -175,6 +179,7 @@ def cli(prog, args):
         "-e", "--exon",
         default="exonpart",
         choices=HINT_TYPE,
+        type=str,
         help="The type to map exon features to."
     )
 
@@ -182,6 +187,7 @@ def cli(prog, args):
         "-5", "--utr5",
         default="UTRpart",
         choices=HINT_TYPE,
+        type=str,
         help="The type to map five_prime_UTR features to."
     )
 
@@ -189,6 +195,7 @@ def cli(prog, args):
         "-3", "--utr3",
         default="UTRpart",
         choices=HINT_TYPE,
+        type=str,
         help="The type to map three_prime_UTR features to."
     )
 
@@ -196,12 +203,15 @@ def cli(prog, args):
         "-u", "--utr",
         default="UTRpart",
         choices=HINT_TYPE,
+        type=str,
         help="The type to map UTR features to."
     )
 
     parser.add_argument(
         "-f", "--feature",
         nargs="+",
+        type=str,
+        default=None,
         help="Pairs to map between.",
     )
 
@@ -255,73 +265,128 @@ def cli(prog, args):
     )
 
     parser.add_argument(
+        "--start-priority",
+        default=0,
+        type=int,
+        help="Give this hint a priority boost.",
+    )
+
+    parser.add_argument(
+        "--stop-priority",
+        default=0,
+        type=int,
+        help="Give this hint a priority boost.",
+    )
+
+    parser.add_argument(
+        "--tss-priority",
+        default=0,
+        type=int,
+        help="Give this hint a priority boost.",
+    )
+
+    parser.add_argument(
+        "--tts-priority",
+        default=0,
+        type=int,
+        help="Give this hint a priority boost.",
+    )
+
+    parser.add_argument(
+        "--ass-priority",
+        default=0,
+        type=int,
+        help="Give this hint a priority boost.",
+    )
+
+    parser.add_argument(
+        "--dss-priority",
+        default=0,
+        type=int,
+        help="Give this hint a priority boost.",
+    )
+
+    parser.add_argument(
         "--cds-priority",
         default=0,
         type=int,
-        help="Give this hint a priority.",
+        help="Give this hint a priority boost.",
     )
 
     parser.add_argument(
         "--intron-priority",
         default=0,
         type=int,
-        help="Give this hint a priority.",
+        help="Give this hint a priority boost.",
     )
 
     parser.add_argument(
         "--exon-priority",
         default=0,
         type=int,
-        help="Give this hint a priority.",
+        help="Give this hint a priority boost.",
     )
 
     parser.add_argument(
         "--utr-priority",
         default=0,
         type=int,
-        help="Give this hint a priority.",
+        help="Give this hint a priority boost.",
     )
 
     parser.add_argument(
         "--ir-priority",
         default=0,
         type=int,
-        help="Give this hint a priority.",
+        help="Give this hint a priority boost.",
     )
 
     parser.add_argument(
         "--nonexon-priority",
         default=0,
         type=int,
-        help="Give this hint a priority.",
+        help="Give this hint a priority boost.",
     )
 
     parser.add_argument(
         "--gene-priority",
         default=0,
         type=int,
-        help="Give this hint a priority.",
+        help="Give this hint a priority boost.",
     )
 
-    return parser.parse_args(args)
+    return
 
 
-def parse_custom_features(features):
+def parse_custom_features(features: List[str]) -> Dict[str, str]:
     if features is None or len(features) == 0:
         return {}
 
-    assert len(features) % 2 == 0
-    features = dict(f.split("=", maxsplit=1) for f in features)
+    split_features: Dict[str, str] = dict()
 
-    for feature in features.values():
-        if feature not in HINT_TYPE:
-            raise ValueError("custom features must map to valid hint type.")
-    return features
+    for feature in features:
+        split_feature = feature.split("=", maxsplit=1)
+        try:
+            key = split_feature[0]
+            val = split_feature[1]
+        except IndexError:
+            raise GPCLIError(
+                "Custom features must have the format 'key=value'. "
+                f"The offending feature was '{feature}'."
+            )
+
+        if val not in HINT_TYPE:
+            raise GPCLIError(
+                "Custom features must map to valid hint type. "
+                f"The offending feature was '{feature[1]}'."
+            )
+
+        split_features[key] = val
+
+    return split_features
 
 
-def main():
-    args = cli(prog=sys.argv[0], args=sys.argv[1:])
-
+def get_hints_map(args: argparse.Namespace) -> Dict[str, str]:
     gff_to_hints = {
         "CDS": args.cds,
         "CDSpart": "CDSpart",
@@ -345,58 +410,110 @@ def main():
     }
 
     gff_to_hints.update(parse_custom_features(args.feature))
+    return gff_to_hints
+
+
+def get_trim_map(args: argparse.Namespace) -> Dict[str, int]:
+    return {
+        "exonpart": args.exon_trim,
+        "CDSpart": args.cds_trim,
+        "UTRpart": args.utr_trim,
+        "intronpart": args.intron_trim,
+        "genicpart": args.gene_trim,
+        "irpart": args.ir_trim,
+        "nonexonpart": args.nonexon_trim,
+    }
+
+
+def get_priority_map(args: argparse.Namespace) -> Dict[str, int]:
+    return {
+        "start": args.start_priority,
+        "stop": args.stop_priority,
+        "tss": args.tss_priority,
+        "tts": args.tts_priority,
+        "ass": args.ass_priority,
+        "dss": args.dss_priority,
+        "exonpart": args.exon_priority,
+        "exon": args.exon_priority,
+        "CDSpart": args.cds_priority,
+        "CDS": args.cds_priority,
+        "UTRpart": args.utr_priority,
+        "UTR": args.utr_priority,
+        "intronpart": args.intron_priority,
+        "intron": args.intron_priority,
+        "genicpart": args.gene_priority,
+        "irpart": args.ir_priority,
+        "nonexonpart": args.nonexon_priority,
+    }
+
+
+def transform_child(
+    feature: GFFRecord,
+    group_name: str,
+    gff_to_hints: Dict[str, str],
+    type_to_trim: Dict[str, int],
+    type_to_priority: Dict[str, int],
+    source: str,
+    priority: int,
+) -> Optional[GFFRecord]:
+    """ Converts a regular feature to a hint record. """
+
+    feature = copy(feature)
+    if feature.type not in gff_to_hints:
+        mapped_type = GFF_TYPE_MAP.get(feature.type, None)
+    else:
+        mapped_type = feature.type
+
+    hint_type: Optional[str] = applicative(
+        lambda t: gff_to_hints.get(t, None),
+        mapped_type
+    )
+
+    if hint_type is None:
+        return None
+
+    feature.type = hint_type
+    feature.trim_ends(type_to_trim[feature.type])
+    priority_boost = type_to_priority[feature.type]
+
+    attr = GFFAttributes(
+        custom=dict(
+            source=source,
+            group=group_name,
+            priority=str(priority + priority_boost)
+        )
+    )
+    feature.attributes = attr
+    return feature
+
+
+def hints(args: argparse.Namespace) -> None:
+    gff_to_hints = get_hints_map(args)
+
+    type_to_trim = get_trim_map(args)
+    type_to_priority = get_priority_map(args)
 
     gff = GFF.parse(args.infile)
     for parent in gff.select_type(args.group_level):
-        group_name = parent.attributes.id
+        group_name = fmap(lambda a: getattr(a, "id"), parent.attributes)
+
         if group_name is None:
-            raise ValueError("Parent doesn't have an id.")
+            raise GPMissingID(
+                "One of the selected records doesn't have an ID. "
+                f"The offending line is {parent}."
+            )
 
         for feature in gff.traverse_children([parent]):
-            if feature.type in gff_to_hints:
-                type_ = gff_to_hints[feature.type]
-            else:
-                type_ = GFF_TYPE_MAP.get(feature.type, None)
-                type_ = gff_to_hints.get(type_, None)
-
-            if type_ is None:
-                continue
-
-            feature.type = type_
-
-            if feature.type == "exonpart":
-                feature.trim_ends(args.exon_trim)
-                priority = args.exon_priority
-            elif feature.type == "CDSpart":
-                feature.trim_ends(args.cds_trim)
-                priority = args.cds_priority
-            elif feature.type == "UTRpart":
-                feature.trim_ends(args.utr_trim)
-                priority = args.utr_priority
-            elif feature.type == "intronpart":
-                feature.trim_ends(args.intron_trim)
-                priority = args.intron_priority
-            elif feature.type == "genicpart":
-                feature.trim_ends(args.gene_trim)
-                priority = args.gene_priority
-            elif feature.type == "irpart":
-                feature.trim_ends(args.ir_trim)
-                priority = args.ir_priority
-            elif feature.type == "nonexonpart":
-                feature.trim_ends(args.nonexon_trim)
-                priority = args.nonexon_priority
-
-            attr = GFFAttributes(
-                custom=dict(
-                    source=args.source,
-                    group=group_name,
-                    priority=args.priority + priority
-                )
+            hint_feature = transform_child(
+                feature,
+                group_name,
+                gff_to_hints,
+                type_to_trim,
+                type_to_priority,
+                args.source,
+                args.priority,
             )
-            feature.attributes = attr
-            print(feature, file=args.outfile)
+
+            if hint_feature is not None:
+                print(hint_feature, file=args.outfile)
     return
-
-
-if __name__ == "__main__":
-    main()

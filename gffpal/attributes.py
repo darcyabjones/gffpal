@@ -44,7 +44,7 @@ class TargetStrand(Enum):
     PLUS = 0
     MINUS = 1
 
-    def __str__(self) -> None:
+    def __str__(self) -> str:
         into_str_map = ["+", "-"]
         return into_str_map[self.value]
 
@@ -52,7 +52,7 @@ class TargetStrand(Enum):
         return "TargetStrand.{self.name}"
 
     @classmethod
-    def parse(cls, string: str) -> TargetStrand:  # noqa
+    def parse(cls, string: str) -> "TargetStrand":
         from_str_map = {
             "+": cls.PLUS,
             "-": cls.MINUS,
@@ -115,7 +115,7 @@ class Target(object):
             )
 
     @classmethod
-    def parse(cls, string: str) -> Target:  #noqa
+    def parse(cls, string: str) -> "Target":
         split_string = string.strip().split(" ")
 
         if len(split_string) < 3:
@@ -153,7 +153,7 @@ class GapCode(Enum):
         return f"GapCode.{self.name}"
 
     @classmethod
-    def parse(cls, string: str) -> GapCode:  # noqa
+    def parse(cls, string: str) -> "GapCode":
         from_str_map = {
             "M": cls.MATCH,
             "I": cls.INSERT,
@@ -188,7 +188,7 @@ class GapElement(object):
         return f"GapElement({code}, {self.length})"
 
     @classmethod
-    def parse(cls, string: str) -> GapElement:  # noqa
+    def parse(cls, string: str) -> "GapElement":
         string = string.strip()
         code = GapCode.parse(string[:1])
         length = int(string[1:])
@@ -209,7 +209,7 @@ class Gap(object):
         return f"Gap({elems})"
 
     @classmethod
-    def parse(cls, string: str) -> Gap:  # noqa
+    def parse(cls, string: str) -> "Gap":
         split_string = string.strip().split(" ")
         elements = [GapElement.parse(s) for s in split_string if s != '']
         return cls(elements)
@@ -284,7 +284,7 @@ class GFFAttributes(object):
         string: str,
         strip_quote: bool = False,
         unescape: bool = False,
-    ) -> GFFAttributes:  #noqa
+    ) -> "GFFAttributes":
         if string.strip() in (".", ""):
             return cls()
 

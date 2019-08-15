@@ -55,7 +55,7 @@ class Strand(Enum):
         return f"Strand.{self.name}"
 
     @classmethod
-    def parse(cls, string: str) -> Strand:  # noqa
+    def parse(cls, string: str) -> "Strand":
         from_str_map: Dict[str, Strand] = {
             "+": cls.PLUS,
             "-": cls.MINUS,
@@ -84,7 +84,7 @@ class Phase(Enum):
         return f"Phase.{self.name}"
 
     @classmethod
-    def parse(cls, string: str) -> Phase:  # noqa
+    def parse(cls, string: str) -> "Phase":
         from_str_map: Dict[str, Phase] = {
             "0": cls.FIRST,
             "1": cls.SECOND,
@@ -124,8 +124,8 @@ class GFFRecord(object):
         strand: Strand = Strand.UNSTRANDED,
         phase: Phase = Phase.NOT_CDS,
         attributes: Union[GFFAttributes, None] = None,
-        parents: List[GFFRecord] = [],
-        children: List[GFFRecord] = [],
+        parents: List["GFFRecord"] = [],
+        children: List["GFFRecord"] = [],
     ) -> None:
         self.seqid = seqid
         self.source = source
@@ -153,14 +153,14 @@ class GFFRecord(object):
         joined_parameters = ", ".join(parameters)
         return f"GFFRecord({joined_parameters})"
 
-    def add_child(self, child: GFFRecord) -> None:  # noqa
+    def add_child(self, child: "GFFRecord") -> None:
         if child not in self.children:
             self.children.append(child)
         if self not in child.parents:
             child.parents.append(self)
         return
 
-    def add_parent(self, parent: GFFRecord) -> None:  # noqa
+    def add_parent(self, parent: "GFFRecord") -> None:
         if parent not in self.parents:
             self.parents.append(parent)
 
@@ -168,12 +168,12 @@ class GFFRecord(object):
             parent.children.append(self)
         return
 
-    def add_children(self, children: List[GFFRecord]) -> None:
+    def add_children(self, children: List["GFFRecord"]) -> None:
         for child in children:
             self.add_child(child)
         return
 
-    def add_parents(self, parents: List[GFFRecord]) -> None:
+    def add_parents(self, parents: List["GFFRecord"]) -> None:
         for parent in parents:
             self.add_parent(parent)
         return
@@ -185,7 +185,7 @@ class GFFRecord(object):
         format: GFFFormats = GFFFormats.GFF3,
         strip_quote: bool = False,
         unescape: bool = False,
-    ) -> GFFRecord:  # noqa
+    ) -> "GFFRecord":
         sline = string.strip().split("\t")
         sline_len = len(sline)
         columns_len = len(cls.columns)
@@ -508,7 +508,7 @@ class GFF(object):
         format: GFFFormats = GFFFormats.GFF3,
         strip_quote: bool = False,
         unescape: bool = False,
-    ) -> GFF:  # noqa
+    ) -> "GFF":
         self = cls([])
         for i, line in enumerate(handle):
             if line.startswith("#"):

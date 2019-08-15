@@ -1,14 +1,17 @@
 from enum import IntEnum
+from typing import ClassVar
 
 
 class ECode(IntEnum):
     """ Error codes for command termination
 
     Based on linux '/usr/include/sysexits.h'
+    Except for usage errors which are 2, in keeping with argparse.
     """
 
     OK = 0
-    USAGE = 64  # command line usage error
+    ERROR = 1  # Generic error, avoid using if possible
+    USAGE = 2  # command line usage error
     DATAERR = 65  # data format error
     NOINPUT = 66  # cannot open input
     NOUSER = 67  # addressee unknown
@@ -24,3 +27,22 @@ class ECode(IntEnum):
     NOPERM = 77  # permission denied
     CONFIG = 78  # configuration error
     SIGINT = 130  # Ctrl-c
+
+
+class GPException(Exception):
+
+    ecode: ClassVar[ECode] = ECode.ERROR
+
+    def __init__(self, msg: str) -> None:
+        self.msg = msg
+        return
+
+
+class GPCLIError(GPException):
+
+    ecode = ECode.USAGE
+
+
+class GPMissingID(GPException):
+
+    ecode = ECode.DATAERR
