@@ -1,7 +1,7 @@
 import re
 import logging
 from typing import Optional
-from typing import Sequence
+from typing import Sequence, Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class TRNAScanRecord(object):
         return
 
     @classmethod
-    def parse(cls, handle):
+    def parse(cls, handle: Sequence[str]) -> Iterator["TRNAScanRecord"]:
         regex = re.compile(r"\s+")
 
         started = False
@@ -126,7 +126,7 @@ class TRNAScanSS(object):
         return
 
     @classmethod
-    def parse(cls, handle):
+    def parse(cls, handle: Sequence[str]) -> Iterator["TRNAScanSS"]:
         record = {}
         id_regex = re.compile(r"(.+)\.trna(\d+)\s+\((\d+)-(\d+)\)")
         type_regex = re.compile((

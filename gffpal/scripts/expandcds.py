@@ -2,6 +2,7 @@ import sys
 import argparse
 
 from typing import List, Tuple, Dict
+from typing import Sequence
 from typing import Optional
 
 from Bio import SeqIO
@@ -152,19 +153,24 @@ def check_start(
     strand: Strand,
     seqs: Dict[str, SeqRecord],
     codon_table: CodonTable,
-):
+) -> Optional[GFFRecord]:
     codon, start, end = get_start(cdss, seqs[parent.seqid], strand)
 
-    if codon in codon_table.start_codons:
+    if codon.upper() in codon_table.start_codons:
         return None
     else:
+        if parent.attributes is None:
+            id = None
+        else:
+            id = parent.attributes.id
+
         return get_non_canon_start_codon(
             parent.seqid,
             start,
             end,
             strand,
             codon,
-            parent.attributes.id
+            id
         )
 
 
@@ -177,16 +183,21 @@ def check_stop(
 ) -> Optional[GFFRecord]:
     codon, start, end = get_stop(cdss, seqs[parent.seqid], strand)
 
-    if codon in codon_table.stop_codons:
+    if codon.upper() in codon_table.stop_codons:
         return None
     else:
+        if parent.attributes is None:
+            id = None
+        else:
+            id = parent.attributes.id
+
         return get_non_canon_stop_codon(
             parent.seqid,
             start,
             end,
             strand,
             codon,
-            parent.attributes.id
+            id
         )
 
 
@@ -204,8 +215,12 @@ def get_non_canon_start_codon(
     end: int,
     strand: Strand,
     codon: str,
-    parent_id: str,
+    parent_id: Optional[str],
 ) -> GFFRecord:
+
+    custom = {"codon": codon}
+    if parent_id is not None:
+        custom["cds_parent"] = parent_id
 
     return GFFRecord(
         seqid,
@@ -218,10 +233,7 @@ def get_non_canon_start_codon(
         Phase.NOT_CDS,
         GFFAttributes(
             ontology_term=["SO:0000680"],
-            custom={
-                "codon": codon,
-                "cds_parent": parent_id,
-            }
+            custom=custom,
         )
     )
 
@@ -232,8 +244,12 @@ def get_non_canon_stop_codon(
     end: int,
     strand: Strand,
     codon: str,
-    parent_id: str,
+    parent_id: Optional[str],
 ) -> GFFRecord:
+
+    custom = {"codon": codon}
+    if parent_id is not None:
+        custom["cds_parent"] = parent_id
 
     return GFFRecord(
         seqid,
@@ -247,10 +263,7 @@ def get_non_canon_stop_codon(
         GFFAttributes(
             ontology_term=["SO:0000319"],
             note=["Non-canonical stop codon"],
-            custom={
-                "codon": codon,
-                "cds_parent": parent_id,
-            }
+            custom=custom,
         )
     )
 
@@ -308,7 +321,8 @@ def expandcds(args: argparse.Namespace) -> None:
             if stop_codon is not None:
                 print(stop_codon, file=args.warnings)
 
-    for parent in gff.traverse_parents(gff.select_type(args.cds_type)):
+    child_cdss: Sequence[GFFRecord] = list(gff.select_type(args.cds_type))
+    for parent in gff.traverse_parents(child_cdss):
         parent.expand_to_children()
 
     print("##gff-version 3", file=args.outfile)

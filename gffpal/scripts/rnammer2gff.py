@@ -2,8 +2,11 @@ import sys
 import argparse
 from copy import deepcopy
 
+from typing import List
+
 from gffpal.gff import GFF
 from gffpal.gff import GFFRecord
+from gffpal.attributes import GFFAttributes
 
 import logging
 logger = logging.getLogger(__name__)
@@ -28,13 +31,7 @@ TYPE_MAP = {
 }
 
 
-def cli(prog, args):
-    parser = argparse.ArgumentParser(
-        prog=prog,
-        description="""
-        """
-    )
-
+def cli_rnammer2gff(parser):
     parser.add_argument(
         "infile",
         type=argparse.FileType('r'),
@@ -63,12 +60,12 @@ def cli(prog, args):
         choices=["arc", "bac", "euk"],
         help="What kingdom was used to run rnammer?",
     )
-    return parser.parse_args(args)
+    return
 
 
-def main():
-    args = cli(prog=sys.argv[0], args=sys.argv[1:])
-    records = []
+def rnammer2gff(args: argparse.Namespace) -> None:
+    records: List[GFFRecord] = []
+
     for line in args.infile:
         if line.startswith("#"):
             continue
@@ -90,16 +87,25 @@ def main():
 
     num = 0
     for record in GFF(records).traverse_children(sort=True):
+        if record.attributes is None:
+            attr = GFFAttributes()
+            record.attributes = attr
+        else:
+            attr = record.attributes
+
         if record.type == "rRNA_gene":
             num += 1
-            record.attributes.id = f"rRNA_gene{num}"
+            attr.id = f"rRNA_gene{num}"
         else:
-            record.attributes.id = f"rRNA{num}"
-            record.attributes.parent = [
+            attr.id = f"rRNA{num}"
+            attr.parent = [
                 p.attributes.id
                 for p
                 in record.parents
+                if (p.attributes is not None
+                    and p.attributes.id is not None)
             ]
+
         print(record, file=args.outfile)
 
     return

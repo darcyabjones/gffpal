@@ -5,6 +5,8 @@ import argparse
 from gffpal.exceptions import GPException, ECode
 from gffpal.scripts.hints import hints, cli_hints
 from gffpal.scripts.expandcds import expandcds, cli_expandcds
+from gffpal.scripts.rnammer2gff import rnammer2gff, cli_rnammer2gff
+from gffpal.scripts.trnascan2gff import trnascan2gff, cli_trnascan2gff
 
 
 def cli(prog, args):
@@ -30,6 +32,20 @@ def cli(prog, args):
 
     cli_expandcds(expandcds_subparser)
 
+    rnammer2gff_subparser = subparsers.add_parser(
+        "rnammer2gff",
+        help="Convert RNAmmer output to a gff3 format."
+    )
+
+    cli_rnammer2gff(rnammer2gff_subparser)
+
+    trnascan2gff_subparser = subparsers.add_parser(
+        "trnascan2gff",
+        help="Convert TRNAScan output to a gff3 format."
+    )
+
+    cli_trnascan2gff(trnascan2gff_subparser)
+
     parsed = parser.parse_args(args)
 
     if parsed.subparser_name is None:
@@ -46,6 +62,10 @@ def main():
             hints(args)
         elif args.subparser_name == "expandcds":
             expandcds(args)
+        elif args.subparser_name == "rnammer2gff":
+            rnammer2gff(args)
+        elif args.subparser_name == "trnascan2gff":
+            trnascan2gff(args)
         else:
             raise ValueError("I shouldn't reach this point ever")
     except GPException as e:
