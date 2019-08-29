@@ -12,6 +12,7 @@ from typing import Iterator
 
 from enum import Enum
 from collections import defaultdict
+from collections import deque
 
 from gffpal.attributes import GFFAttributes
 from gffpal.higher import fmap, or_else
@@ -468,7 +469,7 @@ class GFF(object):
         records: Optional[Sequence[GFFRecord]] = None,
         sort: bool = False,
     ) -> Iterator[GFFRecord]:
-        """ A depth first traversal of the GFF from children to parents.
+        """ A breadth first traversal of the GFF from children to parents.
 
         Optionally sort the parents by position.
         """
@@ -482,8 +483,10 @@ class GFF(object):
         if sort:
             to_visit.sort(key=lambda f: (f.seqid, f.start, f.end, f.type))
 
+        to_visit = deque(to_visit)
+
         while len(to_visit) > 0:
-            node = to_visit.pop()
+            node = to_visit.popleft()
 
             if node in seen:
                 continue

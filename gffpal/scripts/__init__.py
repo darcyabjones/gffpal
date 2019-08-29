@@ -4,6 +4,7 @@ import argparse
 
 from gffpal.exceptions import GPException, ECode
 from gffpal.scripts.hints import hints, cli_hints
+from gffpal.scripts.expandcds import expandcds, cli_expandcds
 
 
 def cli(prog, args):
@@ -22,6 +23,13 @@ def cli(prog, args):
 
     cli_hints(hints_subparser)
 
+    expandcds_subparser = subparsers.add_parser(
+        "expandcds",
+        help="Construct expand CDS features to include stop or start codons."
+    )
+
+    cli_expandcds(expandcds_subparser)
+
     parsed = parser.parse_args(args)
 
     if parsed.subparser_name is None:
@@ -36,6 +44,8 @@ def main():
     try:
         if args.subparser_name == "hints":
             hints(args)
+        elif args.subparser_name == "expandcds":
+            expandcds(args)
         else:
             raise ValueError("I shouldn't reach this point ever")
     except GPException as e:
