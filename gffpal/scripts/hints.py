@@ -473,7 +473,7 @@ def transform_child(
         return None
 
     feature.type = hint_type
-    feature.trim_ends(type_to_trim[feature.type])
+    feature.trim_ends(type_to_trim.get(feature.type, 0))
     priority_boost = type_to_priority[feature.type]
 
     attr = GFFAttributes(
