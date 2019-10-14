@@ -101,7 +101,7 @@ class TRNAScanRecord(object):
                 intron_starts=intron_starts,
                 intron_ends=intron_ends,
                 infernal_score=infernal_score,
-                note=record["note"],
+                note=record.get("note", None),
             )
 
         return
@@ -163,7 +163,7 @@ class TRNAScanSS(object):
                 record["anticodon_end"] = int(anticodon_end)
                 record["score"] = float(score)
 
-            elif line.startswith("Possible intron"):
+            elif line.startswith("Possible"):
                 continue
 
             elif line.startswith("Seq"):
