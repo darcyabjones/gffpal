@@ -105,7 +105,7 @@ def match_to_gene(
         strand=strand,
         phase=Phase.NOT_CDS,
         attributes=GFFAttributes(
-            id=f"{type}{match.num}",
+            id=f"{match.seqid}.{type}{match.num}",
         )
     )
 
@@ -129,6 +129,11 @@ def match_to_trna(
             and p.attributes.id is not None)
     ]
 
+    if match.note is None or match.note == "":
+        notes: List[str] = []
+    else:
+        notes = [match.note]
+
     trna = GFFRecord(
         seqid=match.seqid,
         source=source,
@@ -139,8 +144,9 @@ def match_to_trna(
         strand=strand,
         phase=Phase.NOT_CDS,
         attributes=GFFAttributes(
-            id=f"tRNA{match.num}",
+            id=f"{match.seqid}.tRNA{match.num}",
             parent=parent_ids,
+            note=notes,
             custom={
                 "secondary_structure": ss.ss,
                 "anticodon": match.anticodon,
@@ -180,7 +186,7 @@ def match_to_introns(
             strand=strand,
             phase=Phase.NOT_CDS,
             attributes=GFFAttributes(
-                id=f"{type}{match.num}",
+                id=f"{match.seqid}.{type}{match.num}",
                 parent=parent_ids,
             ),
             parents=parents
@@ -216,7 +222,7 @@ def match_to_anticodon(
         strand=strand,
         phase=Phase.NOT_CDS,
         attributes=GFFAttributes(
-            id=f"{type}{match.num}",
+            id=f"{match.seqid}.{type}{match.num}",
             parent=parent_ids,
         ),
         parents=parents
@@ -229,12 +235,17 @@ def trnascan2gff(args: argparse.Namespace) -> None:
 
     matches = TRNAScanRecord.parse(args.txt)
     sses = TRNAScanSS.parse(args.ss)
-    num_to_ss = {r.num: r for r in sses}
+    num_to_ss = {f"{r.seqid}.{r.num}": r for r in sses}
 
     for match in matches:
-        ss = num_to_ss[match.num]
+        ss = num_to_ss[f"{match.seqid}.{match.num}"]
 
-        gene = match_to_gene(match, args.source, type="tRNA_gene")
+        if match.note is not None and "pseudo" in match.note:
+            type_ = "pseudogene"
+        else:
+            type_ = "tRNA_gene"
+
+        gene = match_to_gene(match, args.source, type=type_)
         genes.append(gene)
 
         trna = match_to_trna(

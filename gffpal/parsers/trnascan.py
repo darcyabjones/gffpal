@@ -1,7 +1,7 @@
 import re
 import logging
 from typing import Optional
-from typing import Sequence, Iterator
+from typing import Sequence, Iterator, List, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -64,34 +64,45 @@ class TRNAScanRecord(object):
                 logger.warning("Line has unexpected number of columns.")
                 logger.warning("offending line is: %s", line)
 
-            record = {
+            record: Dict[str, str] = {
                 k.strip(): v.strip()
                 for k, v
                 in zip(COLUMN_ORDER, sline)
             }
 
-            record["start"] = int(record["start"])
-            record["end"] = int(record["end"])
-            record["num"] = int(record["num"])
-            record["infernal_score"] = float(record["infernal_score"])
+            start = int(record["start"])
+            end = int(record["end"])
+            num = int(record["num"])
+            infernal_score = float(record["infernal_score"])
 
             if record["intron_starts"] == "0" and record["intron_ends"] == "0":
-                del record["intron_starts"]
-                del record["intron_ends"]
+                intron_starts: List[int] = []
+                intron_ends: List[int] = []
             else:
-                record["intron_starts"] = [
+                intron_starts = [
                     int(i.strip())
                     for i
                     in record["intron_starts"].split(",")
                 ]
 
-                record["intron_ends"] = [
+                intron_ends = [
                     int(i.strip())
                     for i
                     in record["intron_ends"].split(",")
                 ]
 
-            yield cls(**record)
+            yield cls(
+                seqid=record["seqid"],
+                start=start,
+                end=end,
+                trna_type=record["trna_type"],
+                anticodon=record["anticodon"],
+                num=num,
+                intron_starts=intron_starts,
+                intron_ends=intron_ends,
+                infernal_score=infernal_score,
+                note=record["note"],
+            )
 
         return
 
