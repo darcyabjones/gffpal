@@ -1,3 +1,5 @@
+from copy import copy
+
 from enum import Enum
 from typing import cast
 from typing import Optional
@@ -9,7 +11,7 @@ from typing import Sequence
 
 from gffpal.higher import fmap
 
-_KEY_TO_ATTR: Dict[str, str] = {
+GFF3_KEY_TO_ATTR: Dict[str, str] = {
     "ID": "id",
     "Name": "name",
     "Alias": "alias",
@@ -23,9 +25,9 @@ _KEY_TO_ATTR: Dict[str, str] = {
     "Is_circular": "is_circular",
 }
 
-_ATTR_TO_KEY: Dict[str, str] = {v: k for k, v in _KEY_TO_ATTR.items()}
+GFF3_ATTR_TO_KEY: Dict[str, str] = {v: k for k, v in GFF3_KEY_TO_ATTR.items()}
 
-_WRITE_ORDER: List[str] = [
+GFF3_WRITE_ORDER: List[str] = [
     "ID",
     "Name",
     "Alias",
@@ -37,6 +39,12 @@ _WRITE_ORDER: List[str] = [
     "Dbxref",
     "Ontology_term",
     "Is_circular",
+]
+
+
+GTF_WRITE_ORDER: List[str] = [
+    "gene_id",
+    "transcript_id",
 ]
 
 
@@ -228,7 +236,204 @@ def parse_bool(string: str) -> bool:
         raise ValueError(f"Invalid boolean encountered: {string}")
 
 
-class GFFAttributes(object):
+class Attributes(object):
+
+    def __init__(
+        self,
+        custom: Mapping[str, str] = {},
+    ) -> None:
+        self.custom = dict(custom)
+        return
+
+    @classmethod
+    def parse(
+        cls,
+        string: str,
+        strip_quote: bool = False,
+        unescape: bool = False,
+    ) -> "Attributes":
+        raise NotImplementedError("Attributes is a baseclass.")
+        return
+
+    def get(
+        self,
+        key: str,
+        default: Union[str, Sequence[str], Target, Gap, bool, None] = None,
+    ) -> Union[str, Sequence[str], Target, Gap, bool, None]:
+        raise NotImplementedError("Attributes is a baseclass.")
+        return
+
+    def pop(
+        self,
+        key: str,
+        default: Union[str, Sequence[str], Target, Gap, bool, None] = None,
+    ) -> Union[str, Sequence[str], Target, Gap, bool, None]:
+        raise NotImplementedError("Attributes is a baseclass.")
+        return
+
+
+class GTFAttributes(Attributes):
+
+    def __init__(
+        self,
+        gene_id: Optional[str] = None,
+        transcript_id: Optional[str] = None,
+        custom: Mapping[str, str] = {},
+    ) -> None:
+        self.gene_id = gene_id
+        self.transcript_id = transcript_id
+        super().__init__(custom)
+        return
+
+    @classmethod
+    def parse(
+        cls,
+        string: str,
+        strip_quote: bool = False,
+        unescape: bool = False,
+    ) -> "GTFAttributes":
+        if string.strip() in (".", ""):
+            return cls()
+
+        seen: Dict[str, int] = dict()
+
+        fields = (
+            f.strip().split("=", maxsplit=1)
+            for f in
+            string.strip(" ;").split(";")
+        )
+
+        kvpairs: Dict[str, str] = dict()
+
+        for k, v in fields:
+            k = k.strip()
+            v = v.strip()
+
+            if k in seen:
+                seen[k] += 1
+                # If it's a duplicate entry, add a number to it.
+                k = f"{k}_{seen[k]}"
+            else:
+                seen[k] = 1
+
+            if strip_quote:
+                v = v.strip(" '\"")
+
+            kvpairs[k] = v
+
+        for k, count in seen.items():
+            if count > 1:
+                v = kvpairs.pop(k)
+                kvpairs[f"{k}_1"] = v
+
+        gene_id = kvpairs.pop("gene_id", None)
+        transcript_id = kvpairs.pop("transcript_id", None)
+        return cls(gene_id, transcript_id, kvpairs)
+
+    def __str__(self) -> str:
+        keys = []
+        keys.extend(GTF_WRITE_ORDER)
+        keys.extend(self.custom.keys())
+
+        kvpairs = []
+        for key in keys:
+            value = self[key]
+            if value is None:
+                continue
+
+            # Deal with newlines etc.
+            value = value.encode("unicode_escape").decode("utf-8")
+            kvpairs.append((key, value))
+
+        return " ; ".join(f"{k} {v}" for k, v in kvpairs)
+
+    def __repr__(self) -> str:
+        param_names = copy(GTF_WRITE_ORDER)
+        param_names.append("custom")
+
+        parameters = []
+        for param in param_names:
+            value = getattr(self, param)
+
+            if value is None or value == []:
+                continue
+
+            if isinstance(value, list):
+                value = repr(list(value))
+            else:
+                value = repr(value)
+
+            parameters.append(f"{param}={value}")
+
+        joined_parameters = ", ".join(parameters)
+        return f"GTFAttributes({joined_parameters})"
+
+
+    def __getitem__(
+        self,
+        key: str
+    ) -> Optional[str]:
+        if key in GTF_WRITE_ORDER:
+            return getattr(self, key)
+        else:
+            return self.custom[key]
+
+    def __setitem__(
+        self,
+        key: str,
+        value: Optional[str],
+    ) -> None:
+        if key in GTF_WRITE_ORDER:
+            setattr(self, key, value)
+        elif value is not None:
+            self.custom[key] = value
+        return
+
+    def __delitem__(self, key: str) -> None:
+        """ Removes an item from the custom dictionary or resets
+        attribute to default """
+
+        if key in GTF_WRITE_ORDER:
+            setattr(self, key, None)
+
+        else:
+            del self.custom[key]
+
+        return
+
+    def get(
+        self,
+        key: str,
+        default: Union[str, Sequence[str], Target, Gap, bool, None] = None,
+    ) -> Union[str, Sequence[str], Target, Gap, bool, None]:
+        """ Gets an atrribute or element from the custom dict. """
+
+        if key in GTF_WRITE_ORDER:
+            return getattr(self, key)
+        else:
+            return self.custom.get(key, default)
+
+    def pop(
+        self,
+        key: str,
+        default: Union[str, Sequence[str], Target, Gap, bool, None] = None,
+    ) -> Union[str, Sequence[str], Target, Gap, bool, None]:
+        """ Removes an item from the attributes and returns its value.
+
+        If the item is one of the reserved GFF3 terms, the
+        value is reset to the default.
+        """
+
+        if key in GTF_WRITE_ORDER:
+            value = getattr(self, key)
+            del self[key]
+            return value
+
+        else:
+            return self.custom.pop(key, default)
+
+
+class GFF3Attributes(Attributes):
 
     def __init__(
         self,
@@ -256,7 +461,8 @@ class GFFAttributes(object):
         self.dbxref = dbxref
         self.ontology_term = ontology_term
         self.is_circular = is_circular
-        self.custom = dict(custom)
+
+        super().__init__(custom=dict(custom))
         return
 
     @classmethod
@@ -284,7 +490,7 @@ class GFFAttributes(object):
         string: str,
         strip_quote: bool = False,
         unescape: bool = False,
-    ) -> "GFFAttributes":
+    ) -> "GFF3Attributes":
         if string.strip() in (".", ""):
             return cls()
 
@@ -294,11 +500,18 @@ class GFFAttributes(object):
             in string.strip(" ;").split(";")
         )
 
-        kvpairs: Dict[str, str] = {
-            k.strip(): v.strip()
-            for k, v
-            in fields
-        }
+        if strip_quote:
+            kvpairs: Dict[str, str] = {
+                k.strip(): v.strip(" '\"")
+                for k, v
+                in fields
+            }
+        else:
+            kvpairs = {
+                k.strip(): v.strip()
+                for k, v
+                in fields
+            }
 
         id = kvpairs.pop("ID", None)
         name = kvpairs.pop("Name", None)
@@ -374,7 +587,7 @@ class GFFAttributes(object):
 
     def __str__(self) -> str:
         keys = []
-        keys.extend(_WRITE_ORDER)
+        keys.extend(GFF3_WRITE_ORDER)
         keys.extend(self.custom.keys())
 
         kvpairs = []
@@ -399,7 +612,7 @@ class GFFAttributes(object):
         return ";".join(f"{k}={v}" for k, v in kvpairs)
 
     def __repr__(self) -> str:
-        param_names = [_KEY_TO_ATTR[k] for k in _WRITE_ORDER]
+        param_names = [GFF3_KEY_TO_ATTR[k] for k in GFF3_WRITE_ORDER]
         param_names.append("custom")
 
         parameters = []
@@ -417,7 +630,7 @@ class GFFAttributes(object):
             parameters.append(f"{param}={value}")
 
         joined_parameters = ", ".join(parameters)
-        return f"GFFAttributes({joined_parameters})"
+        return f"GFF3Attributes({joined_parameters})"
 
     @staticmethod
     def _attr_escape(string: str) -> str:
@@ -447,8 +660,8 @@ class GFFAttributes(object):
         self,
         key: str,
     ) -> Union[str, Sequence[str], Target, Gap, bool, None]:
-        if key in _KEY_TO_ATTR:
-            return getattr(self, _KEY_TO_ATTR[key])
+        if key in GFF3_KEY_TO_ATTR:
+            return getattr(self, GFF3_KEY_TO_ATTR[key])
         else:
             return self.custom[key]
 
@@ -459,8 +672,8 @@ class GFFAttributes(object):
     ) -> None:
         """ If the key is an attr set it, otherwise update the custom dict."""
 
-        if key in _KEY_TO_ATTR:
-            setattr(self, _KEY_TO_ATTR[key], value)
+        if key in GFF3_KEY_TO_ATTR:
+            setattr(self, GFF3_KEY_TO_ATTR[key], value)
         else:
             self.custom[key] = cast(str, value)  # Cast is for mypy
         return
@@ -470,14 +683,14 @@ class GFFAttributes(object):
         attribute to default """
 
         if key in ("ID", "Name", "Target", "Gap"):
-            setattr(self, _KEY_TO_ATTR[key], None)
+            setattr(self, GFF3_KEY_TO_ATTR[key], None)
 
         elif key in ("Alias", "Parent", "Derives_from", "Note",
                      "Dbxref", "Ontology_term"):
-            setattr(self, _KEY_TO_ATTR[key], [])
+            setattr(self, GFF3_KEY_TO_ATTR[key], [])
 
         elif key == "Is_circular":
-            setattr(self, _KEY_TO_ATTR[key], False)
+            setattr(self, GFF3_KEY_TO_ATTR[key], False)
 
         else:
             del self.custom[key]
@@ -491,8 +704,8 @@ class GFFAttributes(object):
     ) -> Union[str, Sequence[str], Target, Gap, bool, None]:
         """ Gets an atrribute or element from the custom dict. """
 
-        if key in _KEY_TO_ATTR:
-            return getattr(self, _KEY_TO_ATTR[key])
+        if key in GFF3_KEY_TO_ATTR:
+            return getattr(self, GFF3_KEY_TO_ATTR[key])
         else:
             return self.custom.get(key, default)
 
@@ -507,9 +720,9 @@ class GFFAttributes(object):
         value is reset to the default.
         """
 
-        if key in _KEY_TO_ATTR:
-            value = getattr(self, _KEY_TO_ATTR[key])
-            del self[_KEY_TO_ATTR[key]]
+        if key in GFF3_KEY_TO_ATTR:
+            value = getattr(self, GFF3_KEY_TO_ATTR[key])
+            del self[GFF3_KEY_TO_ATTR[key]]
             return value
 
         else:

@@ -7,6 +7,7 @@ from typing import Sequence, Mapping
 from typing import Iterator
 from typing import Hashable, Any
 from typing import TypeVar
+from typing import Generic
 
 from enum import Enum
 from collections import defaultdict
@@ -109,9 +110,10 @@ class Phase(Enum):
 
 
 HashT = TypeVar("HashT", Hashable, Any)
+AttrT = TypeVar("AttrT", bound=Attributes)
 
 
-class GFFRecord(object):
+class GFFRecord(Generic[AttrT]):
 
     columns: List[str] = [
         "seqid",
@@ -135,7 +137,7 @@ class GFFRecord(object):
         score: Optional[float] = None,
         strand: Strand = Strand.UNSTRANDED,
         phase: Phase = Phase.NOT_CDS,
-        attributes: Union[GFFAttributes, None] = None,
+        attributes: Union[AttrT, None] = None,
         parents: Sequence["GFFRecord"] = [],
         children: Sequence["GFFRecord"] = [],
     ) -> None:
@@ -149,10 +151,10 @@ class GFFRecord(object):
         self.phase = phase
         self.attributes = attributes
 
-        self.parents: List[GFFRecord] = []
+        self.parents: List[GFFRecord[AttrT]] = []
         self.add_parents(parents)
 
-        self.children: List[GFFRecord] = []
+        self.children: List[GFFRecord[AttrT]] = []
         self.add_children(children)
         return
 
@@ -187,14 +189,14 @@ class GFFRecord(object):
     def __len__(self) -> int:
         return self.length()
 
-    def add_child(self, child: "GFFRecord") -> None:
+    def add_child(self, child: "GFFRecord[AttrT]") -> None:
         if child not in self.children:
             self.children.append(child)
         if self not in child.parents:
             child.parents.append(self)
         return
 
-    def add_parent(self, parent: "GFFRecord") -> None:
+    def add_parent(self, parent: "GFFRecord[AttrT]") -> None:
         if parent not in self.parents:
             self.parents.append(parent)
 
@@ -202,12 +204,12 @@ class GFFRecord(object):
             parent.children.append(self)
         return
 
-    def add_children(self, children: Sequence["GFFRecord"]) -> None:
+    def add_children(self, children: Sequence["GFFRecord[AttrT]"]) -> None:
         for child in children:
             self.add_child(child)
         return
 
-    def add_parents(self, parents: Sequence["GFFRecord"]) -> None:
+    def add_parents(self, parents: Sequence["GFFRecord[AttrT]"]) -> None:
         for parent in parents:
             self.add_parent(parent)
         return
@@ -216,7 +218,7 @@ class GFFRecord(object):
         self,
         sort: bool = False,
         breadth: bool = False,
-    ) -> Iterator["GFFRecord"]:
+    ) -> Iterator["GFFRecord[AttrT]"]:
         """ A graph traversal of this `GFFRecord`s children.
 
         Keyword arguments:
@@ -263,7 +265,7 @@ class GFFRecord(object):
         self,
         sort: bool = False,
         breadth: bool = False,
-    ) -> Iterator["GFFRecord"]:
+    ) -> Iterator["GFFRecord[AttrT]"]:
         """ A graph traversal of this `GFFRecord`s parents.
 
         Keyword arguments:
@@ -311,7 +313,7 @@ class GFFRecord(object):
         format: GFFFormats = GFFFormats.GFF3,
         strip_quote: bool = False,
         unescape: bool = False,
-    ) -> "GFFRecord":
+    ) -> "GFFRecord[AttrT]":
         """ Parse a gff line string as a `GFFRecord`.
 
         Keyword arguments:
