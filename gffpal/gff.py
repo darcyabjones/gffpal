@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
 
 import logging
+from typing import cast
 from typing import Optional, Union
 from typing import Set, List, Dict, Tuple
 from typing import Sequence, Mapping
 from typing import Iterator
 from typing import Hashable, Any
-from typing import TypeVar
+from typing import TypeVar, Type
 from typing import Generic
 
 from enum import Enum
 from collections import defaultdict
 from collections import deque
 
-from gffpal.attributes import GFFAttributes
+from gffpal.attributes import Attributes, GFF3Attributes
 from gffpal.higher import fmap, or_else
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
 
 
 TYPE_PARENT_MAP = {
@@ -232,7 +234,7 @@ class GFFRecord(Generic[AttrT]):
 
         should_reverse = not breadth
 
-        seen: Set[GFFRecord] = set()
+        seen: Set[GFFRecord[AttrT]] = set()
 
         to_visit = deque([self])
 
@@ -279,7 +281,7 @@ class GFFRecord(Generic[AttrT]):
 
         should_reverse = not breadth
 
-        seen: Set[GFFRecord] = set()
+        seen: Set[GFFRecord[AttrT]] = set()
         to_visit = deque([self])
 
         while len(to_visit) > 0:
@@ -310,7 +312,7 @@ class GFFRecord(Generic[AttrT]):
     def parse(
         cls,
         string: str,
-        format: GFFFormats = GFFFormats.GFF3,
+        attr: Type[AttrT] = cast(Type[AttrT], GFF3Attributes),
         strip_quote: bool = False,
         unescape: bool = False,
     ) -> "GFFRecord[AttrT]":
@@ -333,7 +335,12 @@ class GFFRecord(Generic[AttrT]):
         sline_len = len(sline)
         columns_len = len(cls.columns)
 
-        if sline_len < columns_len:
+        if sline_len == columns_len - 1:
+            logger.warning(
+                ("Line has has too few columns columns. "
+                 "Probably it is missing the attributes"),
+            )
+        elif sline_len < columns_len:
             raise ValueError((
                 "Line has too few columns. "
                 f"Expected: {columns_len}, Encountered: {sline_len}"
@@ -346,6 +353,8 @@ class GFFRecord(Generic[AttrT]):
             )
 
         fields: Dict[str, str] = dict(zip(cls.columns, sline))
+        if sline_len == columns_len - 1:
+            fields["attributes"] = ""
 
         # 0-based indexing exclusive
         start = int(fields["start"]) - 1
@@ -365,14 +374,14 @@ class GFFRecord(Generic[AttrT]):
         strand = Strand.parse(fields["strand"])
         phase = Phase.parse(fields["phase"])
 
-        if format == GFFFormats.GFF3:
-            attributes = GFFAttributes.parse(
+        attributes = cast(
+            AttrT,
+            attr.parse(
                 fields["attributes"],
                 strip_quote=strip_quote,
                 unescape=unescape,
             )
-        else:
-            raise ValueError("Currently only support GFF3 formats.")
+        )
 
         return cls(
             fields["seqid"],
@@ -441,10 +450,13 @@ class GFFRecord(Generic[AttrT]):
             self.end = max_
         return
 
+
+class GFF3Record(GFFRecord[GFF3Attributes]):
+
     @classmethod
     def infer_from_children(
         cls,
-        children: Sequence["GFFRecord"],
+        children: Sequence["GFF3Record"],
         id: Optional[str] = None,
         seqid: Optional[str] = None,
         source: str = ".",
@@ -452,7 +464,7 @@ class GFFRecord(Generic[AttrT]):
         strand: Optional[Strand] = None,
         score: Optional[float] = None,
         phase: Phase = Phase.NOT_CDS,
-    ) -> "GFFRecord":
+    ) -> "GFF3Record":
         """ """
 
         if len(children) == 0:
@@ -470,23 +482,26 @@ class GFFRecord(Generic[AttrT]):
         start = min(r.start for r in children)
         end = max(r.end for r in children)
 
-        attributes = GFFAttributes(id=id)
-        record = GFFRecord(
-            seqid,
-            source,
-            type,
-            start,
-            end,
-            score,
-            strand,
-            phase,
-            attributes,
-            children=children,
+        attributes = GFF3Attributes(id=id)
+        record = cast(
+            GFF3Record,
+            GFFRecord(
+                seqid,
+                source,
+                type,
+                start,
+                end,
+                score,
+                strand,
+                phase,
+                attributes,
+                children=children,
+            )
         )
         return record
 
     @staticmethod
-    def _infer_id_from_children(children: Sequence["GFFRecord"]) -> str:
+    def _infer_id_from_children(children: Sequence["GFF3Record"]) -> str:
         """ Try to predict the id to use based on the children's parents. """
 
         ids: Dict[str, int] = defaultdict(int)
@@ -506,7 +521,7 @@ class GFFRecord(Generic[AttrT]):
         return id
 
     @staticmethod
-    def _infer_seqid_from_children(children: Sequence["GFFRecord"]) -> str:
+    def _infer_seqid_from_children(children: Sequence["GFF3Record"]) -> str:
         seqids = set(r.seqid for r in children)
         if len(seqids) > 1:
             raise ValueError("Multiple seqids encountered.")
@@ -516,10 +531,10 @@ class GFFRecord(Generic[AttrT]):
 
 class GFF(object):
 
-    def __init__(self, records: Sequence[GFFRecord]) -> None:
-        self.inner: List[GFFRecord] = []
-        self.index: Dict[str, List[GFFRecord]] = defaultdict(list)
-        self.missing_parents: Dict[str, List[GFFRecord]] = defaultdict(list)
+    def __init__(self, records: Sequence[GFF3Record]) -> None:
+        self.inner: List[GFF3Record] = []
+        self.index: Dict[str, List[GFF3Record]] = defaultdict(list)
+        self.missing_parents: Dict[str, List[GFF3Record]] = defaultdict(list)
         self.add_records(records)
         return
 
@@ -529,7 +544,7 @@ class GFF(object):
     def __getitem__(
         self,
         key: Union[int, slice, List[int]]
-    ) -> Union[GFFRecord, "GFF"]:
+    ) -> Union[GFF3Record, "GFF"]:
         if isinstance(key, int):
             return self.inner[key]
         elif isinstance(key, slice):
@@ -541,13 +556,13 @@ class GFF(object):
                 "GFF __getitem__ can only take an int, slice or list of ints."
             )
 
-    def __iter__(self) -> Iterator[GFFRecord]:
+    def __iter__(self) -> Iterator[GFF3Record]:
         return iter(self.inner)
 
     def __len__(self) -> int:
         return len(self.inner)
 
-    def get(self, key: Union[str, List[str]]) -> List[GFFRecord]:
+    def get(self, key: Union[str, List[str]]) -> List[GFF3Record]:
         if isinstance(key, str):
             return self.index.get(key, [])
         elif isinstance(key, list):
@@ -559,17 +574,20 @@ class GFF(object):
         else:
             raise ValueError("GFF.get can only take a str or list of str.")
 
-    def add_record(self, record: GFFRecord) -> None:
+    def add_record(self, record: GFF3Record) -> None:
         """ """
 
         # Attributes can be None
-        id_ = fmap(lambda a: getattr(a, "id"), record.attributes)
+        id_: Optional[str] = fmap(
+            lambda a: getattr(a, "id"),
+            record.attributes
+        )
 
         if id_ is not None:
             self.index[id_].append(record)
+            children = self.missing_parents.pop(id_, [])
 
-        children = self.missing_parents.pop(id_, [])
-        record.add_children(children)
+            record.add_children(children)
 
         parent_ids: List[str] = or_else(
             [],
@@ -587,7 +605,7 @@ class GFF(object):
         self.inner.append(record)
         return
 
-    def add_records(self, records: Sequence[GFFRecord]) -> None:
+    def add_records(self, records: Sequence[GFF3Record]) -> None:
         for record in records:
             self.add_record(record)
         return
@@ -619,7 +637,7 @@ class GFF(object):
             else:
                 type = type_candidates[0]
 
-            record = GFFRecord.infer_from_children(
+            record = GFF3Record.infer_from_children(
                 children,
                 id=parent_id,
                 type=type,
@@ -627,7 +645,7 @@ class GFF(object):
             self.add_record(record)
         return
 
-    def select_type(self, type: str) -> Iterator[GFFRecord]:
+    def select_type(self, type: str) -> Iterator[GFF3Record]:
         for f in self:
             if f.type == type:
                 yield f
@@ -640,7 +658,7 @@ class GFF(object):
         """ """
 
         from collections import defaultdict
-        out: Dict[HashT, List[GFFRecord]] = defaultdict(list)
+        out: Dict[HashT, List[GFF3Record]] = defaultdict(list)
 
         for key, row in zip(keys, self.inner):
             out[key].append(row)
@@ -652,10 +670,10 @@ class GFF(object):
 
     def traverse_children(
         self,
-        records: Optional[Sequence[GFFRecord]] = None,
+        records: Optional[Sequence[GFF3Record]] = None,
         sort: bool = False,
         breadth: bool = False,
-    ) -> Iterator[GFFRecord]:
+    ) -> Iterator[GFF3Record]:
         """ A graph traversal of the GFF from parents to children.
 
         Optionally sort the children by position.
@@ -663,10 +681,15 @@ class GFF(object):
 
         should_reverse = not breadth
 
-        seen: Set[GFFRecord] = set()
+        seen: Set[GFF3Record] = set()
 
         if records is None:
-            init_nodes = [f for f in self.inner if len(f.parents) == 0]
+            init_nodes = [
+                f for
+                f in
+                self.inner
+                if len(f.parents) == 0
+            ]
         else:
             init_nodes = [f for f in records]
 
@@ -693,7 +716,7 @@ class GFF(object):
             else:
                 seen.add(node)
 
-            children = list(node.children)
+            children = cast(List[GFF3Record], list(node.children))
             if sort:
                 children.sort(
                     key=lambda f: (f.seqid, f.start, f.end, f.type),
@@ -707,10 +730,10 @@ class GFF(object):
 
     def traverse_parents(
         self,
-        records: Optional[Sequence[GFFRecord]] = None,
+        records: Optional[Sequence[GFF3Record]] = None,
         sort: bool = False,
         breadth: bool = False,
-    ) -> Iterator[GFFRecord]:
+    ) -> Iterator[GFF3Record]:
         """ A graph traversal of the GFF from children to parents.
 
         Optionally sort the parents by position.
@@ -718,7 +741,7 @@ class GFF(object):
 
         should_reverse = not breadth
 
-        seen: Set[GFFRecord] = set()
+        seen: Set[GFF3Record] = set()
         if records is None:
             init_nodes = [f for f in self.inner if len(f.children) == 0]
         else:
@@ -746,7 +769,7 @@ class GFF(object):
             else:
                 seen.add(node)
 
-            parents = list(node.parents)
+            parents = cast(List[GFF3Record], list(node.parents))
             if sort:
                 parents.sort(
                     key=lambda f: (f.seqid, f.start, f.end, f.type),
@@ -762,7 +785,6 @@ class GFF(object):
     def parse(
         cls,
         handle: Sequence[str],
-        format: GFFFormats = GFFFormats.GFF3,
         strip_quote: bool = False,
         unescape: bool = False,
     ) -> "GFF":
@@ -771,7 +793,7 @@ class GFF(object):
             if line.startswith("#"):
                 continue
             try:
-                record = GFFRecord.parse(
+                record = GFF3Record.parse(
                     line.strip(),
                     strip_quote=strip_quote,
                     unescape=unescape,
@@ -779,6 +801,6 @@ class GFF(object):
             except ValueError as e:
                 print(line)
                 raise e
-            self.add_record(record)
+            self.add_record(cast(GFF3Record, record))
 
         return self

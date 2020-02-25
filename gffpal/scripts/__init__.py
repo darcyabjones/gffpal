@@ -1,12 +1,15 @@
 import sys
 import argparse
-
+import logging
 
 from gffpal.exceptions import GPException, ECode
 from gffpal.scripts.hints import hints, cli_hints
 from gffpal.scripts.expandcds import expandcds, cli_expandcds
 from gffpal.scripts.rnammer2gff import rnammer2gff, cli_rnammer2gff
 from gffpal.scripts.trnascan2gff import trnascan2gff, cli_trnascan2gff
+from gffpal.scripts.exonerate2gff import exonerate2gff, cli_exonerate2gff
+
+logging.basicConfig(level=logging.ERROR)
 
 
 def cli(prog, args):
@@ -46,6 +49,13 @@ def cli(prog, args):
 
     cli_trnascan2gff(trnascan2gff_subparser)
 
+    exonerate2gff_subparser = subparsers.add_parser(
+        "exonerate2gff",
+        help="Convert exonerate output to a gff3 format."
+    )
+
+    cli_exonerate2gff(exonerate2gff_subparser)
+
     parsed = parser.parse_args(args)
 
     if parsed.subparser_name is None:
@@ -66,6 +76,8 @@ def main():
             rnammer2gff(args)
         elif args.subparser_name == "trnascan2gff":
             trnascan2gff(args)
+        elif args.subparser_name == "exonerate2gff":
+            exonerate2gff(args)
         else:
             raise ValueError("I shouldn't reach this point ever")
     except GPException as e:

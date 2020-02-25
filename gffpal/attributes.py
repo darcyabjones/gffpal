@@ -298,7 +298,7 @@ class GTFAttributes(Attributes):
         seen: Dict[str, int] = dict()
 
         fields = (
-            f.strip().split("=", maxsplit=1)
+            f.strip().split(" ", maxsplit=1)
             for f in
             string.strip(" ;").split(";")
         )
@@ -367,7 +367,6 @@ class GTFAttributes(Attributes):
 
         joined_parameters = ", ".join(parameters)
         return f"GTFAttributes({joined_parameters})"
-
 
     def __getitem__(
         self,
@@ -439,20 +438,24 @@ class GFF3Attributes(Attributes):
         self,
         id: Optional[str] = None,
         name: Optional[str] = None,
-        alias: Sequence[str] = [],
-        parent: Sequence[str] = [],
+        alias: Sequence[str] = list(),
+        parent: Sequence[str] = list(),
         target: Optional[Target] = None,
         gap: Optional[Gap] = None,
-        derives_from: Sequence[str] = [],
-        note: Sequence[str] = [],
-        dbxref: Sequence[str] = [],
-        ontology_term: Sequence[str] = [],
+        derives_from: Sequence[str] = list(),
+        note: Sequence[str] = list(),
+        dbxref: Sequence[str] = list(),
+        ontology_term: Sequence[str] = list(),
         is_circular: Optional[bool] = None,
-        custom: Mapping[str, str] = {},
+        custom: Mapping[str, str] = dict(),
     ) -> None:
         self.id = id
         self.name = name
         self.alias = alias
+
+        # There are possible issues with this, the default list appears to
+        # become a global object, so appending to it append to all
+        # instances that use the default.
         self.parent = parent
         self.target = target
         self.gap = gap

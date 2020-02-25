@@ -90,3 +90,19 @@ tRNAscan-SE -E -o "trnascan.txt" -f "trnascan_ss.txt" "my.fasta"
 
 gffpal trnascan2gff -o "trnascan.gff3" trnascan.txt trnascan_ss.txt
 ```
+
+
+#### `gffpal exonerate2gff`
+
+Converts exonerates weird gff2 format to a GFF3 with unique ids for each block.
+This is a lossy process, some of the ids that exonerate generates are lost (but the query protein is retained).
+It's only known to work on the protein to genome alignments, so others might have issues.
+
+The source is always set to "exonerate".
+"exon" features are used as "CDSs" since protein alignments should only give that and they have the match statistics.
+
+Basic usage:
+
+```
+gffpal exonerate2gff -o "exonerate.gff3" exonerate.gff2
+```

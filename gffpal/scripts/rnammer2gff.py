@@ -2,11 +2,12 @@ import sys
 import argparse
 from copy import deepcopy
 
+from typing import cast
 from typing import List
 
 from gffpal.gff import GFF
-from gffpal.gff import GFFRecord
-from gffpal.attributes import GFFAttributes
+from gffpal.gff import GFF3Record
+from gffpal.attributes import GFF3Attributes
 
 import logging
 logger = logging.getLogger(__name__)
@@ -64,7 +65,7 @@ def cli_rnammer2gff(parser):
 
 
 def rnammer2gff(args: argparse.Namespace) -> None:
-    records: List[GFFRecord] = []
+    records: List[GFF3Record] = []
 
     for line in args.infile:
         if line.startswith("#"):
@@ -77,7 +78,7 @@ def rnammer2gff(args: argparse.Namespace) -> None:
         sline[2] = new_type
         sline[8] = "."
 
-        rna_record = GFFRecord.parse("\t".join(sline))
+        rna_record = cast(GFF3Record, GFF3Record.parse("\t".join(sline)))
         gene_record = deepcopy(rna_record)
         gene_record.type = "rRNA_gene"
         gene_record.add_child(rna_record)
@@ -88,7 +89,7 @@ def rnammer2gff(args: argparse.Namespace) -> None:
     num = 0
     for record in GFF(records).traverse_children(sort=True):
         if record.attributes is None:
-            attr = GFFAttributes()
+            attr = GFF3Attributes()
             record.attributes = attr
         else:
             attr = record.attributes

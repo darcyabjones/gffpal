@@ -6,8 +6,8 @@ from typing import List
 from typing import Dict
 from typing import Optional
 
-from gffpal.gff import GFF, GFFRecord
-from gffpal.attributes import GFFAttributes
+from gffpal.gff import GFF, GFF3Record
+from gffpal.attributes import GFF3Attributes
 from gffpal.exceptions import GPCLIError, GPMissingID
 from gffpal.higher import fmap, applicative
 
@@ -448,14 +448,14 @@ def get_priority_map(args: argparse.Namespace) -> Dict[str, int]:
 
 
 def transform_child(
-    feature: GFFRecord,
+    feature: GFF3Record,
     group_name: str,
     gff_to_hints: Dict[str, str],
     type_to_trim: Dict[str, int],
     type_to_priority: Dict[str, int],
     source: str,
     priority: int,
-) -> Optional[GFFRecord]:
+) -> Optional[GFF3Record]:
     """ Converts a regular feature to a hint record. """
 
     feature = copy(feature)
@@ -476,7 +476,7 @@ def transform_child(
     feature.trim_ends(type_to_trim.get(feature.type, 0))
     priority_boost = type_to_priority[feature.type]
 
-    attr = GFFAttributes(
+    attr = GFF3Attributes(
         custom=dict(
             source=source,
             group=group_name,

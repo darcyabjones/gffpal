@@ -5,9 +5,9 @@ from typing import Tuple, List, Dict
 from typing import Sequence, Mapping
 
 from gffpal.gff import GFF
-from gffpal.gff import GFFRecord
+from gffpal.gff import GFF3Record
 from gffpal.gff import Strand, Phase
-from gffpal.attributes import GFFAttributes
+from gffpal.attributes import GFF3Attributes
 from gffpal.parsers.trnascan import TRNAScanRecord, TRNAScanSS
 
 import logging
@@ -92,10 +92,10 @@ def match_to_gene(
     match: TRNAScanRecord,
     source: str,
     type: str
-) -> GFFRecord:
+) -> GFF3Record:
     start, end, strand = fix_strand(match.start, match.end)
 
-    gene = GFFRecord(
+    gene = GFF3Record(
         seqid=match.seqid,
         source=source,
         type=type,
@@ -104,7 +104,7 @@ def match_to_gene(
         score=match.infernal_score,
         strand=strand,
         phase=Phase.NOT_CDS,
-        attributes=GFFAttributes(
+        attributes=GFF3Attributes(
             id=f"{match.seqid}.{type}{match.num}",
         )
     )
@@ -117,8 +117,8 @@ def match_to_trna(
     ss: TRNAScanSS,
     source: str,
     type_map: Mapping[str, str] = TYPE_MAP,
-    parents: Sequence[GFFRecord] = []
-) -> GFFRecord:
+    parents: Sequence[GFF3Record] = []
+) -> GFF3Record:
     start, end, strand = fix_strand(match.start, match.end)
 
     parent_ids = [
@@ -134,7 +134,7 @@ def match_to_trna(
     else:
         notes = [match.note]
 
-    trna = GFFRecord(
+    trna = GFF3Record(
         seqid=match.seqid,
         source=source,
         type=type_map.get(match.trna_type.lower(), "tRNA"),
@@ -143,7 +143,7 @@ def match_to_trna(
         score=match.infernal_score,
         strand=strand,
         phase=Phase.NOT_CDS,
-        attributes=GFFAttributes(
+        attributes=GFF3Attributes(
             id=f"{match.seqid}.tRNA{match.num}",
             parent=parent_ids,
             note=notes,
@@ -162,8 +162,8 @@ def match_to_introns(
     match: TRNAScanRecord,
     source: str,
     type: str = "tRNA_intron",
-    parents: Sequence[GFFRecord] = [],
-) -> List[GFFRecord]:
+    parents: Sequence[GFF3Record] = [],
+) -> List[GFF3Record]:
     introns = []
 
     parent_ids = [
@@ -176,7 +176,7 @@ def match_to_introns(
 
     for istart, iend in zip(match.intron_starts, match.intron_ends):
         start, end, strand = fix_strand(istart, iend)
-        intron = GFFRecord(
+        intron = GFF3Record(
             seqid=match.seqid,
             source=source,
             type=type,
@@ -185,7 +185,7 @@ def match_to_introns(
             score=match.infernal_score,
             strand=strand,
             phase=Phase.NOT_CDS,
-            attributes=GFFAttributes(
+            attributes=GFF3Attributes(
                 id=f"{match.seqid}.{type}{match.num}",
                 parent=parent_ids,
             ),
@@ -200,8 +200,8 @@ def match_to_anticodon(
     ss: TRNAScanSS,
     source: str,
     type: str = "anticodon",
-    parents: Sequence[GFFRecord] = []
-) -> GFFRecord:
+    parents: Sequence[GFF3Record] = []
+) -> GFF3Record:
     start, end, strand = fix_strand(ss.anticodon_start, ss.anticodon_end)
 
     parent_ids = [
@@ -212,7 +212,7 @@ def match_to_anticodon(
             and p.attributes.id is not None)
     ]
 
-    anticodon = GFFRecord(
+    anticodon = GFF3Record(
         seqid=match.seqid,
         source=source,
         type=type,
@@ -221,7 +221,7 @@ def match_to_anticodon(
         score=match.infernal_score,
         strand=strand,
         phase=Phase.NOT_CDS,
-        attributes=GFFAttributes(
+        attributes=GFF3Attributes(
             id=f"{match.seqid}.{type}{match.num}",
             parent=parent_ids,
         ),
@@ -231,7 +231,7 @@ def match_to_anticodon(
 
 
 def trnascan2gff(args: argparse.Namespace) -> None:
-    genes: List[GFFRecord] = []
+    genes: List[GFF3Record] = []
 
     matches = TRNAScanRecord.parse(args.txt)
     sses = TRNAScanSS.parse(args.ss)

@@ -1,7 +1,8 @@
 import sys
 import argparse
 
-from typing import List, Tuple, Dict
+from typing import cast
+from typing import Set, List, Tuple, Dict
 from typing import Sequence
 from typing import Optional
 
@@ -10,8 +11,8 @@ from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import FeatureLocation
 from Bio.Data import CodonTable
 
-from gffpal.gff import GFF, GFFRecord, Strand, Phase
-from gffpal.attributes import GFFAttributes
+from gffpal.gff import GFF, GFF3Record, Strand, Phase
+from gffpal.attributes import GFF3Attributes
 
 
 def cli_expandcds(parser):
@@ -79,7 +80,7 @@ def cli_expandcds(parser):
     return
 
 
-def bump_start(cdss: List[GFFRecord], strand: Strand) -> None:
+def bump_start(cdss: List[GFF3Record], strand: Strand) -> None:
     assert len(cdss) > 0
 
     if strand == Strand.MINUS:
@@ -92,7 +93,7 @@ def bump_start(cdss: List[GFFRecord], strand: Strand) -> None:
     return
 
 
-def bump_end(cdss: List[GFFRecord], strand: Strand) -> None:
+def bump_end(cdss: List[GFF3Record], strand: Strand) -> None:
     assert len(cdss) > 0
 
     if strand == Strand.MINUS:
@@ -106,7 +107,7 @@ def bump_end(cdss: List[GFFRecord], strand: Strand) -> None:
 
 
 def get_start(
-    cdss: List[GFFRecord],
+    cdss: List[GFF3Record],
     seq: SeqRecord,
     strand: Strand,
 ) -> Tuple[str, int, int]:
@@ -127,7 +128,7 @@ def get_start(
 
 
 def get_stop(
-    cdss: List[GFFRecord],
+    cdss: List[GFF3Record],
     seq: SeqRecord,
     strand: Strand,
 ) -> Tuple[str, int, int]:
@@ -148,12 +149,12 @@ def get_stop(
 
 
 def check_start(
-    cdss: List[GFFRecord],
-    parent: GFFRecord,
+    cdss: List[GFF3Record],
+    parent: GFF3Record,
     strand: Strand,
     seqs: Dict[str, SeqRecord],
     codon_table: CodonTable,
-) -> Optional[GFFRecord]:
+) -> Optional[GFF3Record]:
     codon, start, end = get_start(cdss, seqs[parent.seqid], strand)
 
     if codon.upper() in codon_table.start_codons:
@@ -175,12 +176,12 @@ def check_start(
 
 
 def check_stop(
-    cdss: List[GFFRecord],
-    parent: GFFRecord,
+    cdss: List[GFF3Record],
+    parent: GFF3Record,
     strand: Strand,
     seqs: Dict[str, SeqRecord],
     codon_table: CodonTable,
-) -> Optional[GFFRecord]:
+) -> Optional[GFF3Record]:
     codon, start, end = get_stop(cdss, seqs[parent.seqid], strand)
 
     if codon.upper() in codon_table.stop_codons:
@@ -201,7 +202,7 @@ def check_stop(
         )
 
 
-def find_strand(cdss: List[GFFRecord], parent: GFFRecord) -> Strand:
+def find_strand(cdss: List[GFF3Record], parent: GFF3Record) -> Strand:
     strands = list({f.strand for f in cdss})
     if len(strands) > 1:
         return parent.strand
@@ -216,13 +217,13 @@ def get_non_canon_start_codon(
     strand: Strand,
     codon: str,
     parent_id: Optional[str],
-) -> GFFRecord:
+) -> GFF3Record:
 
     custom = {"codon": codon}
     if parent_id is not None:
         custom["cds_parent"] = parent_id
 
-    return GFFRecord(
+    return GFF3Record(
         seqid,
         "gffpal",
         "non_canonical_start_codon",
@@ -231,7 +232,7 @@ def get_non_canon_start_codon(
         None,
         strand,
         Phase.NOT_CDS,
-        GFFAttributes(
+        GFF3Attributes(
             ontology_term=["SO:0000680"],
             custom=custom,
         )
@@ -245,13 +246,13 @@ def get_non_canon_stop_codon(
     strand: Strand,
     codon: str,
     parent_id: Optional[str],
-) -> GFFRecord:
+) -> GFF3Record:
 
     custom = {"codon": codon}
     if parent_id is not None:
         custom["cds_parent"] = parent_id
 
-    return GFFRecord(
+    return GFF3Record(
         seqid,
         "gffpal",
         "stop_codon",
@@ -260,7 +261,7 @@ def get_non_canon_stop_codon(
         None,
         strand,
         Phase.NOT_CDS,
-        GFFAttributes(
+        GFF3Attributes(
             ontology_term=["SO:0000319"],
             note=["Non-canonical stop codon"],
             custom=custom,
@@ -279,13 +280,18 @@ def expandcds(args: argparse.Namespace) -> None:
 
     codon_table = CodonTable.unambiguous_dna_by_id[args.gencode]
 
-    cds_parents = set()
+    cds_parents: Set[GFF3Record] = set()
     for record in gff.select_type(args.cds_type):
-        cds_parents.update(record.parents)
+        cds_parents.update((cast(GFF3Record, p) for p in record.parents))
 
     for parent in cds_parents:
         cdss = sorted(
-            [f for f in parent.children if f.type == args.cds_type],
+            [
+                cast(GFF3Record, f)
+                for f
+                in parent.children
+                if f.type == args.cds_type
+            ],
             key=lambda f: (f.start, f.end)
         )
 
@@ -321,7 +327,7 @@ def expandcds(args: argparse.Namespace) -> None:
             if stop_codon is not None:
                 print(stop_codon, file=args.warnings)
 
-    child_cdss: Sequence[GFFRecord] = list(gff.select_type(args.cds_type))
+    child_cdss: Sequence[GFF3Record] = list(gff.select_type(args.cds_type))
     for parent in gff.traverse_parents(child_cdss):
         parent.expand_to_children()
 
