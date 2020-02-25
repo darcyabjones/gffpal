@@ -79,6 +79,9 @@ def deal_with_block(block: List[str], gene_num: int) -> List[GFF3Record]:
         in parsed["exon"]
     ]
 
+    for c in cdss:
+        c.attributes.custom["query"] = gene.attributes.custom["query"]
+
     mrna = GFF3Record.infer_from_children(
         cdss,
         id=f"mRNA{gene_num}",
@@ -91,6 +94,8 @@ def deal_with_block(block: List[str], gene_num: int) -> List[GFF3Record]:
 
     mrna.add_parent(gene)
     mrna.attributes.parent = [gene.attributes.id]
+    mrna.attributes.custom["query"] = gene.attributes.custom["query"]
+
     out = [gene, mrna]
     out.extend(cdss)
     return out
