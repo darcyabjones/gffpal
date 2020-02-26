@@ -233,8 +233,8 @@ def match_to_anticodon(
 def trnascan2gff(args: argparse.Namespace) -> None:
     genes: List[GFF3Record] = []
 
-    matches = TRNAScanRecord.parse(args.txt)
-    sses = TRNAScanSS.parse(args.ss)
+    matches = TRNAScanRecord.from_file(args.txt)
+    sses = TRNAScanSS.from_file(args.ss)
     num_to_ss = {f"{r.seqid}.{r.num}": r for r in sses}
 
     for match in matches:

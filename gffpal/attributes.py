@@ -147,6 +147,7 @@ class Target(object):
 
 
 class GapCode(Enum):
+
     MATCH = 0
     INSERT = 1
     DELETE = 2
@@ -240,7 +241,7 @@ class Attributes(object):
 
     def __init__(
         self,
-        custom: Mapping[str, str] = {},
+        custom: Mapping[str, str],
     ) -> None:
         self.custom = dict(custom)
         return

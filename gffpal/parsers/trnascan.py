@@ -1,25 +1,34 @@
 import re
 import logging
+from typing import TextIO
 from typing import Optional
 from typing import Sequence, Iterator, List, Dict
 
-logger = logging.getLogger(__name__)
+from gffpal.parsers.parsers import ParseError, LineParseError
+from gffpal.parsers.parsers import MULTISPACE_REGEX
+from gffpal.parsers.parsers import (
+    parse_int,
+    parse_float,
+    parse_string_not_empty
+)
 
-COLUMN_ORDER = [
-    "seqid",
-    "num",
-    "start",
-    "end",
-    "trna_type",
-    "anticodon",
-    "intron_starts",
-    "intron_ends",
-    "infernal_score",
-    "note",
-]
+logger = logging.getLogger(__name__)
 
 
 class TRNAScanRecord(object):
+
+    column_order = [
+        "seqid",
+        "num",
+        "start",
+        "end",
+        "trna_type",
+        "anticodon",
+        "intron_starts",
+        "intron_ends",
+        "infernal_score",
+        "note",
+    ]
 
     def __init__(
         self,
@@ -28,11 +37,11 @@ class TRNAScanRecord(object):
         end: int,
         trna_type: str,
         anticodon: str,
-        num: Optional[int] = None,
-        intron_starts: Sequence[int] = [],
-        intron_ends: Sequence[int] = [],
-        infernal_score: Optional[float] = None,
-        note: Optional[str] = None,
+        num: Optional[int],
+        intron_starts: Sequence[int],
+        intron_ends: Sequence[int],
+        infernal_score: Optional[float],
+        note: Optional[str],
     ):
         self.seqid = seqid
         self.start = start
@@ -47,11 +56,66 @@ class TRNAScanRecord(object):
         return
 
     @classmethod
-    def parse(cls, handle: Sequence[str]) -> Iterator["TRNAScanRecord"]:
-        regex = re.compile(r"\s+")
+    def from_line(cls, line: str) -> "TRNAScanRecord":
+        sline = MULTISPACE_REGEX.split(line.rstrip())
+
+        if ((len(sline) != len(cls.column_order)) and
+                (len(sline) != len(cls.column_order) - 1)):
+            raise LineParseError(
+                "Line had the wrong number of columns. "
+                f"Expected {len(cls.column_order)} or "
+                f"{len(cls.column_order) - 1} but got {len(sline)}."
+            )
+
+        record: Dict[str, str] = {
+            k.strip(): v.strip()
+            for k, v
+            in zip(cls.column_order, sline)
+        }
+
+        start = parse_int(record["start"], "start")
+        end = parse_int(record["end"], "end")
+        num = parse_int(record["num"], "num")
+
+        infernal_score = parse_float(
+            record["infernal_score"],
+            "infernal_score"
+        )
+
+        if record["intron_starts"] == "0" and record["intron_ends"] == "0":
+            intron_starts: List[int] = []
+            intron_ends: List[int] = []
+        else:
+            intron_starts = [
+                parse_int(i.strip(), "intron_starts")
+                for i
+                in record["intron_starts"].split(",")
+            ]
+
+            intron_ends = [
+                parse_int(i.strip(), "intron_ends")
+                for i
+                in record["intron_ends"].split(",")
+            ]
+
+        return cls(
+            seqid=parse_string_not_empty(record["seqid"], "seqid"),
+            start=start,
+            end=end,
+            trna_type=parse_string_not_empty(record["trna_type"], "trna_type"),
+            anticodon=parse_string_not_empty(record["anticodon"], "anticodon"),
+            num=num,
+            intron_starts=intron_starts,
+            intron_ends=intron_ends,
+            infernal_score=infernal_score,
+            note=record.get("note", None),
+        )
+
+    @classmethod
+    def from_file(cls, handle: TextIO) -> Iterator["TRNAScanRecord"]:
 
         started = False
-        for line in handle:
+        for i, line in enumerate(handle, 1):
             if line.startswith("-"):
                 started = True
                 continue
@@ -59,50 +123,19 @@ class TRNAScanRecord(object):
             elif not started:
                 continue
 
-            sline = regex.split(line.rstrip())
-            if len(COLUMN_ORDER) < len(sline):
-                logger.warning("Line has unexpected number of columns.")
-                logger.warning("offending line is: %s", line)
+            try:
+                yield cls.from_line(line)
+            except LineParseError as e:
+                if hasattr(handle, "name"):
+                    filename: Optional[str] = handle.name
+                else:
+                    filename = None
 
-            record: Dict[str, str] = {
-                k.strip(): v.strip()
-                for k, v
-                in zip(COLUMN_ORDER, sline)
-            }
-
-            start = int(record["start"])
-            end = int(record["end"])
-            num = int(record["num"])
-            infernal_score = float(record["infernal_score"])
-
-            if record["intron_starts"] == "0" and record["intron_ends"] == "0":
-                intron_starts: List[int] = []
-                intron_ends: List[int] = []
-            else:
-                intron_starts = [
-                    int(i.strip())
-                    for i
-                    in record["intron_starts"].split(",")
-                ]
-
-                intron_ends = [
-                    int(i.strip())
-                    for i
-                    in record["intron_ends"].split(",")
-                ]
-
-            yield cls(
-                seqid=record["seqid"],
-                start=start,
-                end=end,
-                trna_type=record["trna_type"],
-                anticodon=record["anticodon"],
-                num=num,
-                intron_starts=intron_starts,
-                intron_ends=intron_ends,
-                infernal_score=infernal_score,
-                note=record.get("note", None),
-            )
+                raise ParseError(
+                    filename,
+                    i,
+                    e.message
+                )
 
         return
 
@@ -121,7 +154,7 @@ class TRNAScanSS(object):
         score: float,
         seq: str,
         ss: str,
-        num: Optional[int] = None,
+        num: Optional[int],
     ):
         self.seqid = seqid
         self.start = int(start)
@@ -137,7 +170,7 @@ class TRNAScanSS(object):
         return
 
     @classmethod
-    def parse(cls, handle: Sequence[str]) -> Iterator["TRNAScanSS"]:
+    def from_file(cls, handle: TextIO) -> Iterator["TRNAScanSS"]:
         record = {}
         id_regex = re.compile(r"(.+)\.trna(\d+)\s+\((\d+)-(\d+)\)")
         type_regex = re.compile((
@@ -159,9 +192,9 @@ class TRNAScanSS(object):
                  anticodon_end, score) = match.groups()
                 record["trna_type"] = trna_type
                 record["anticodon"] = anticodon
-                record["anticodon_start"] = int(anticodon_start)
-                record["anticodon_end"] = int(anticodon_end)
-                record["score"] = float(score)
+                record["anticodon_start"] = anticodon_start
+                record["anticodon_end"] = anticodon_end
+                record["score"] = score
 
             elif line.startswith("Possible"):
                 continue
@@ -179,16 +212,40 @@ class TRNAScanSS(object):
                     continue
                 elif "seqid" in record:
                     # Its not the first record
-                    yield cls(**record)
+                    yield cls(
+                        record["seqid"],
+                        int(record["start"]),
+                        int(record["end"]),
+                        record["trna_type"],
+                        record["anticodon"],
+                        int(record["anticodon_start"]),
+                        int(record["anticodon_end"]),
+                        float(record["score"]),
+                        record["seq"],
+                        record["ss"],
+                        int(record["num"])
+                    )
 
                 seqid, num, start, end = match.groups()
                 record = {
                     "seqid": seqid,
-                    "num": int(num),
-                    "start": int(start),
-                    "end": int(end),
+                    "num": num,
+                    "start": start,
+                    "end": end,
                 }
 
         if "seqid" in record:
-            yield cls(**record)
+            yield cls(
+                record["seqid"],
+                int(record["start"]),
+                int(record["end"]),
+                record["trna_type"],
+                record["anticodon"],
+                int(record["anticodon_start"]),
+                int(record["anticodon_end"]),
+                float(record["score"]),
+                record["seq"],
+                record["ss"],
+                int(record["num"])
+            )
         return
