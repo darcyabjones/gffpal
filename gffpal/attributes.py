@@ -243,7 +243,7 @@ class Attributes(object):
         self,
         custom: Mapping[str, str],
     ) -> None:
-        self.custom = dict(custom)
+        self.custom: Dict[str, str] = dict(custom)
         return
 
     @classmethod
@@ -473,12 +473,12 @@ class GFF3Attributes(Attributes):
         self.name = name
 
         if alias is not None:
-            self.alias = alias
+            self.alias: List[str] = list(alias)
         else:
             self.alias = []
 
         if parent is not None:
-            self.parent = parent
+            self.parent: List[str] = list(parent)
         else:
             self.parent = []
 
@@ -486,33 +486,33 @@ class GFF3Attributes(Attributes):
         self.gap = gap
 
         if derives_from is not None:
-            self.derives_from = derives_from
+            self.derives_from: List[str] = list(derives_from)
         else:
             self.derives_from = []
 
         if note is not None:
-            self.note = note
+            self.note: List[str] = list(note)
         else:
             self.note = []
 
         if dbxref is not None:
-            self.dbxref = dbxref
+            self.dbxref: List[str] = list(dbxref)
         else:
             self.dbxref = []
 
         if ontology_term is not None:
-            self.ontology_term = ontology_term
+            self.ontology_term: List[str] = list(ontology_term)
         else:
             self.ontology_term = []
 
         self.is_circular = is_circular
 
         if custom is not None:
-            custom_not_none = custom
+            custom_not_none: Dict[str, str] = dict(custom)
         else:
             custom_not_none = {}
 
-        super().__init__(custom=dict(custom_not_none))
+        super().__init__(custom=custom_not_none)
         return
 
     @classmethod

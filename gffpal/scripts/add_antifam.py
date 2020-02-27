@@ -2,6 +2,8 @@ import sys
 import argparse
 from collections import defaultdict
 
+from typing import Dict, List
+
 from gffpal.gff import GFF3Record
 from gffpal.parsers.domtbl import DomTbl
 
@@ -46,9 +48,9 @@ def cli_add_antifam(parser):
 
 def add_antifam(args: argparse.Namespace) -> None:
 
-    antifam_records = defaultdict(list)
-    for line in DomTbl.from_file(args.antifam):
-        antifam_records[line.target_name].append(line)
+    antifam_records: Dict[str, List[DomTbl]] = defaultdict(list)
+    for rec in DomTbl.from_file(args.antifam):
+        antifam_records[rec.target_name].append(rec)
 
     for line in args.infile:
         sline = line.strip()
@@ -59,19 +61,20 @@ def add_antifam(args: argparse.Namespace) -> None:
         record = GFF3Record.parse(sline)
         if record.attributes is None:
             print(record, file=args.outfile)
+            continue
 
         field = record.attributes.get(args.field, None)
         if field is None:
             print(record, file=args.outfile)
             continue
 
-        if field not in antifam_records:
+        if str(field) not in antifam_records:
             print(record, file=args.outfile)
             continue
 
         dbxrefs = []
         matches = []
-        for antifam_record in antifam_records[field]:
+        for antifam_record in antifam_records[str(field)]:
             dbxrefs.append(f"AntiFam:{antifam_record.query_acc}")
             matches.append(
                 f"{antifam_record.query_acc} {antifam_record.full_evalue} "
