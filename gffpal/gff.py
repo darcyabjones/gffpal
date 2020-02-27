@@ -14,6 +14,14 @@ from enum import Enum
 from collections import defaultdict
 from collections import deque
 
+from gffpal.parsers.parsers import (
+    parse_int,
+    parse_float,
+    parse_or_none,
+    is_one_of,
+    parse_string_not_empty
+)
+
 from gffpal.attributes import Attributes, GFF3Attributes
 from gffpal.higher import fmap, or_else
 
@@ -139,9 +147,9 @@ class GFFRecord(Generic[AttrT]):
         score: Optional[float] = None,
         strand: Strand = Strand.UNSTRANDED,
         phase: Phase = Phase.NOT_CDS,
-        attributes: Union[AttrT, None] = None,
-        parents: Sequence["GFFRecord"] = [],
-        children: Sequence["GFFRecord"] = [],
+        attributes: Optional[AttrT] = None,
+        parents: Optional[Sequence["GFFRecord"]] = None,
+        children: Optional[Sequence["GFFRecord"]] = None,
     ) -> None:
         self.seqid = seqid
         self.source = source
@@ -154,10 +162,12 @@ class GFFRecord(Generic[AttrT]):
         self.attributes = attributes
 
         self.parents: List[GFFRecord[AttrT]] = []
-        self.add_parents(parents)
+        if parents is not None:
+            self.add_parents(parents)
 
         self.children: List[GFFRecord[AttrT]] = []
-        self.add_children(children)
+        if children is not None:
+            self.add_children(children)
         return
 
     def __str__(self) -> str:
@@ -357,8 +367,8 @@ class GFFRecord(Generic[AttrT]):
             fields["attributes"] = ""
 
         # 0-based indexing exclusive
-        start = int(fields["start"]) - 1
-        end = int(fields["end"])
+        start = parse_int(fields["start"], "start") - 1
+        end = parse_int(fields["end"], "end")
 
         if start > end:
             tmp = start
@@ -366,13 +376,19 @@ class GFFRecord(Generic[AttrT]):
             end = tmp
             del tmp
 
-        if fields["score"] in (".", ""):
-            score = None
-        else:
-            score = float(fields["score"])
+        score = parse_or_none(fields["score"], "score", ".", parse_float)
 
-        strand = Strand.parse(fields["strand"])
-        phase = Phase.parse(fields["phase"])
+        strand = Strand.parse(is_one_of(
+            fields["strand"],
+            ["-", "+", ".", "?"],
+            "strand"
+        ))
+
+        phase = Phase.parse(is_one_of(
+            fields["phase"],
+            ["0", "1", "2", "."],
+            "phase"
+        ))
 
         attributes = cast(
             AttrT,
@@ -384,9 +400,9 @@ class GFFRecord(Generic[AttrT]):
         )
 
         return cls(
-            fields["seqid"],
-            fields["source"],
-            fields["type"],
+            parse_string_not_empty(fields["seqid"], "seqid"),
+            parse_string_not_empty(fields["source"], "source"),
+            parse_string_not_empty(fields["type"], "type"),
             start,
             end,
             score,

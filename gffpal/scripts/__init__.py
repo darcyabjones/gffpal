@@ -8,6 +8,7 @@ from gffpal.scripts.expandcds import expandcds, cli_expandcds
 from gffpal.scripts.rnammer2gff import rnammer2gff, cli_rnammer2gff
 from gffpal.scripts.trnascan2gff import trnascan2gff, cli_trnascan2gff
 from gffpal.scripts.exonerate2gff import exonerate2gff, cli_exonerate2gff
+from gffpal.scripts.add_antifam import add_antifam, cli_add_antifam
 
 logging.basicConfig(level=logging.ERROR)
 
@@ -56,6 +57,13 @@ def cli(prog, args):
 
     cli_exonerate2gff(exonerate2gff_subparser)
 
+    add_antifam_subparser = subparsers.add_parser(
+        "add_antifam",
+        help="Add antifam matches to gff3 attributes."
+    )
+
+    cli_add_antifam(add_antifam_subparser)
+
     parsed = parser.parse_args(args)
 
     if parsed.subparser_name is None:
@@ -78,6 +86,8 @@ def main():
             trnascan2gff(args)
         elif args.subparser_name == "exonerate2gff":
             exonerate2gff(args)
+        elif args.subparser_name == "add_antifam":
+            add_antifam(args)
         else:
             raise ValueError("I shouldn't reach this point ever")
     except GPException as e:

@@ -256,6 +256,10 @@ class Attributes(object):
         raise NotImplementedError("Attributes is a baseclass.")
         return
 
+    def is_empty(self) -> bool:
+        raise NotImplementedError("Attributes is a baseclass.")
+        return
+
     def get(
         self,
         key: str,
@@ -279,11 +283,17 @@ class GTFAttributes(Attributes):
         self,
         gene_id: Optional[str] = None,
         transcript_id: Optional[str] = None,
-        custom: Mapping[str, str] = {},
+        custom: Optional[Mapping[str, str]] = None,
     ) -> None:
         self.gene_id = gene_id
         self.transcript_id = transcript_id
-        super().__init__(custom)
+
+        if custom is not None:
+            custom_not_none = custom
+        else:
+            custom_not_none = {}
+
+        super().__init__(custom_not_none)
         return
 
     @classmethod
@@ -331,7 +341,16 @@ class GTFAttributes(Attributes):
         transcript_id = kvpairs.pop("transcript_id", None)
         return cls(gene_id, transcript_id, kvpairs)
 
+    def is_empty(self) -> bool:
+        return ((self.gene_id is None) and
+                (self.transcript_id is None) and
+                (len(self.custom) == 0))
+
     def __str__(self) -> str:
+        # Avoid having an empty string at the end.
+        if self.is_empty():
+            return "."
+
         keys = []
         keys.extend(GTF_WRITE_ORDER)
         keys.extend(self.custom.keys())
@@ -439,34 +458,61 @@ class GFF3Attributes(Attributes):
         self,
         id: Optional[str] = None,
         name: Optional[str] = None,
-        alias: Sequence[str] = list(),
-        parent: Sequence[str] = list(),
+        alias: Optional[Sequence[str]] = None,
+        parent: Optional[Sequence[str]] = None,
         target: Optional[Target] = None,
         gap: Optional[Gap] = None,
-        derives_from: Sequence[str] = list(),
-        note: Sequence[str] = list(),
-        dbxref: Sequence[str] = list(),
-        ontology_term: Sequence[str] = list(),
+        derives_from: Optional[Sequence[str]] = None,
+        note: Optional[Sequence[str]] = None,
+        dbxref: Optional[Sequence[str]] = None,
+        ontology_term: Optional[Sequence[str]] = None,
         is_circular: Optional[bool] = None,
-        custom: Mapping[str, str] = dict(),
+        custom: Optional[Mapping[str, str]] = None,
     ) -> None:
         self.id = id
         self.name = name
-        self.alias = alias
 
-        # There are possible issues with this, the default list appears to
-        # become a global object, so appending to it append to all
-        # instances that use the default.
-        self.parent = parent
+        if alias is not None:
+            self.alias = alias
+        else:
+            self.alias = []
+
+        if parent is not None:
+            self.parent = parent
+        else:
+            self.parent = []
+
         self.target = target
         self.gap = gap
-        self.derives_from = derives_from
-        self.note = note
-        self.dbxref = dbxref
-        self.ontology_term = ontology_term
+
+        if derives_from is not None:
+            self.derives_from = derives_from
+        else:
+            self.derives_from = []
+
+        if note is not None:
+            self.note = note
+        else:
+            self.note = []
+
+        if dbxref is not None:
+            self.dbxref = dbxref
+        else:
+            self.dbxref = []
+
+        if ontology_term is not None:
+            self.ontology_term = ontology_term
+        else:
+            self.ontology_term = []
+
         self.is_circular = is_circular
 
-        super().__init__(custom=dict(custom))
+        if custom is not None:
+            custom_not_none = custom
+        else:
+            custom_not_none = {}
+
+        super().__init__(custom=dict(custom_not_none))
         return
 
     @classmethod
@@ -589,7 +635,47 @@ class GFF3Attributes(Attributes):
             kvpairs
         )
 
+    def is_empty(self) -> bool:  # noqa
+        # Yes, this could be written as single boolean comparison.
+        # But it gets so long that it's hard to understand.
+        if len(self.custom) > 0:
+            return False
+        elif self.id is not None:
+            return False
+        elif self.name is not None:
+            return False
+        elif len(self.alias) > 0:
+            return False
+        elif len(self.parent) > 0:
+            return False
+        elif self.target is not None:
+            return False
+        elif self.gap is not None:
+            return False
+        elif len(self.derives_from) > 0:
+            return False
+        elif len(self.note) > 0:
+            return False
+        elif len(self.dbxref) > 0:
+            return False
+        elif len(self.ontology_term) > 0:
+            return False
+        # Nothing will be printed is this is false, so we have to check for
+        # both
+        elif (self.is_circular is not None) and (self.is_circular):
+            return False
+        else:
+            return True
+
+        return ((self.gene_id is None) and
+                (self.transcript_id is None) and
+                (len(self.custom) == 0))
+
     def __str__(self) -> str:
+        # Avoid having an empty string at the end.
+        if self.is_empty():
+            return "."
+
         keys = []
         keys.extend(GFF3_WRITE_ORDER)
         keys.extend(self.custom.keys())

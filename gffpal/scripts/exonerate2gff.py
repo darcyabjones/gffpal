@@ -39,6 +39,16 @@ def deal_with_block(block: List[str], gene_num: int) -> List[GFF3Record]:
 
     assert len(parsed["gene"]) == 1
     assert len(parsed["similarity"]) == 1
+    gene_parsed = parsed["gene"][0]
+    similarity_parsed = parsed["similarity"][0]
+
+    custom: Dict[str, str] = dict()
+    if similarity_parsed.attributes is not None:
+        custom["query"] = similarity_parsed.attributes.custom["Query"]
+
+    if gene_parsed.attributes is not None:
+        custom["identity"] = gene_parsed.attributes.custom["identity"]
+        custom["similarity"] = gene_parsed.attributes.custom["similarity"]
 
     gene = GFF3Record(
         parsed["gene"][0].seqid,
@@ -51,11 +61,7 @@ def deal_with_block(block: List[str], gene_num: int) -> List[GFF3Record]:
         phase=parsed["gene"][0].phase,
         attributes=GFF3Attributes(
             id=f"gene{gene_num}",
-            custom={
-                "query": parsed["similarity"][0].attributes.custom["Query"],
-                "identity": parsed["gene"][0].attributes.custom["identity"],
-                "similarity": parsed["gene"][0].attributes.custom["similarity"]
-            }
+            custom=custom,
         )
     )
 
@@ -72,7 +78,9 @@ def deal_with_block(block: List[str], gene_num: int) -> List[GFF3Record]:
             attributes=GFF3Attributes(
                 id=f"CDS{gene_num}",
                 parent=[f"mRNA{gene_num}"],
-                custom=e.attributes.custom
+                custom=(e.attributes.custom
+                        if e.attributes is not None
+                        else None)
             )
         )
         for e
@@ -80,7 +88,10 @@ def deal_with_block(block: List[str], gene_num: int) -> List[GFF3Record]:
     ]
 
     for c in cdss:
-        c.attributes.custom["query"] = gene.attributes.custom["query"]
+        if gene.attributes is not None:
+            # This is safe because we added attributes.
+            assert c.attributes is not None
+            c.attributes.custom["query"] = gene.attributes.custom["query"]
 
     mrna = GFF3Record.infer_from_children(
         cdss,
@@ -93,8 +104,13 @@ def deal_with_block(block: List[str], gene_num: int) -> List[GFF3Record]:
     )
 
     mrna.add_parent(gene)
-    mrna.attributes.parent = [gene.attributes.id]
-    mrna.attributes.custom["query"] = gene.attributes.custom["query"]
+
+    if gene.attributes is not None:
+        # This is safe because infer_from_children adds an ID to attributes.
+        assert mrna.attributes is not None
+        if gene.attributes.id is not None:
+            mrna.attributes.parent = [gene.attributes.id]
+        mrna.attributes.custom["query"] = gene.attributes.custom["query"]
 
     out = [gene, mrna]
     out.extend(cdss)
@@ -119,6 +135,7 @@ def exonerate2gff(args: argparse.Namespace) -> None:
             assert block is None
             block = []
         elif line.startswith("# --- END OF GFF DUMP ---"):
+            assert block is not None
             dealt_with = deal_with_block(block, gene_num)
             print("\n".join(str(f) for f in dealt_with), file=args.outfile)
             print("###", file=args.outfile)
