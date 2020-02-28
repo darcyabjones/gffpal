@@ -689,7 +689,7 @@ class GFF3Attributes(Attributes):
             key = self._attr_escape(key)
 
             if isinstance(value, list):
-                value = ", ".join(self._attr_escape(str(v)) for v in value)
+                value = ",".join(self._attr_escape(str(v)) for v in value)
 
             elif isinstance(value, bool):
                 value = "true" if value else "false"
