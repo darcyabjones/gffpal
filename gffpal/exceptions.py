@@ -1,5 +1,4 @@
 from enum import IntEnum
-from typing import ClassVar
 
 
 class ECode(IntEnum):
@@ -31,7 +30,7 @@ class ECode(IntEnum):
 
 class GPException(Exception):
 
-    ecode: ClassVar[ECode] = ECode.ERROR
+    ecode: ECode = ECode.ERROR
 
     def __init__(self, msg: str) -> None:
         self.msg = msg

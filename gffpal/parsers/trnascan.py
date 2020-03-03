@@ -42,7 +42,7 @@ class TRNAScanRecord(object):
         intron_ends: Sequence[int],
         infernal_score: Optional[float],
         note: Optional[str],
-    ):
+    ) -> None:
         self.seqid = seqid
         self.start = start
         self.end = end
@@ -155,7 +155,7 @@ class TRNAScanSS(object):
         seq: str,
         ss: str,
         num: Optional[int],
-    ):
+    ) -> None:
         self.seqid = seqid
         self.start = int(start)
         self.end = int(end)

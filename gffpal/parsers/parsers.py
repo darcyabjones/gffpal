@@ -19,7 +19,7 @@ class ParseError(Exception):
         filename: Optional[str],
         line: Optional[int],
         message: str
-    ):
+    ) -> None:
         self.filename = filename
         self.line = line
         self.message = message
@@ -28,7 +28,7 @@ class ParseError(Exception):
 
 class LineParseError(Exception):
 
-    def __init__(self, message: str):
+    def __init__(self, message: str) -> None:
         self.message = message
         return
 
