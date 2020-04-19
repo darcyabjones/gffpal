@@ -46,6 +46,9 @@ TYPE_PARENT_MAP = {
 }
 
 
+T = TypeVar('T')
+
+
 class GFFFormats(Enum):
     GTF2 = 0
     GFF3 = 1
@@ -544,6 +547,99 @@ class GFF3Record(GFFRecord[GFF3Attributes]):
         else:
             return list(seqids)[0]
 
+    def copy(self) -> "GFF3Record":
+        """ You'll still need to update the ID """
+        from copy import copy, deepcopy
+
+        node_copy = copy(self)
+        node_copy.attributes = deepcopy(self.attributes)
+        node_copy.attributes.parent = []
+        node_copy.children = []
+        node_copy.parents = []
+        return node_copy
+
+def make_root_id(
+    template: Optional[str],
+    id_: Optional[str],
+    type_: str,
+    global_index: int,
+) -> str:
+    if type_ == ".":
+        type_ = "notype"
+
+    if template is None:
+        return None
+
+    if "{id}" not in tem
+    return
+
+    def break_bubbles(
+        self,
+        id_template: str = "{id}_{index}",
+        singleton_id_template: Optional[str] = None,
+        root_id_template: Optional[str] = None,
+        global_index_start: int = 1
+    ) -> "GFF3Record":
+        from collections import deque
+
+        feature_map: Dict["GFF3Record", List["GFF3Record"]] = defaultdict(list)
+        to_visit = deque([self])
+        global_indices: Dict[str, int] = defaultdict(
+            lambda: global_index_start
+        )
+
+        while len(to_visit) > 0:
+
+            # Doing breadth first traversal.
+            node = to_visit.popleft()
+            if node in feature_map:
+                continue
+
+            to_visit.extend(node.children)
+
+            if (len(node.parents) == 0) or (node == self):
+                node_copy = node.copy()
+                feature_map[node].append(node_copy)
+                if ((node.attributes is not None) and
+                        (node.attributes.id is not None) and
+                        (root_id_template )):
+                    new_id = root_id_template.format(
+                        id=node.attributes.id,
+                        type=node.type,
+                        global_index=global_indices[node.type],
+                    )
+                    node_copy.attributes.id = new_id
+
+                global_indices[node.type] += 1
+                continue
+
+            elif len(node.parents) == 1:
+                template_id = "{id}"
+
+            elif len(node.parents) > 1:
+                template_id = "{id}_{index}"
+
+            flattened_parents = flatten_list_of_lists(
+                feature_map[p]
+                for p
+                in node.parents
+            )
+
+            for local_index, parent in enumerate(flattened_parents, 1):
+                node_copy = node.copy()
+                node_copy.attributes.id = template_id.format(
+                    id=node.attributes.id,
+                    index=local_index,
+                    parent_id=parent.attributes.id
+                )
+
+                node_copy.add_parent(parent)
+                node_copy.attributes.parent.append(parent.attributes.id)
+                feature_map[node].append(node_copy)
+
+        assert len(feature_map[self]) == 1
+        return feature_map[self][0]
+
 
 class GFF(object):
 
@@ -820,3 +916,10 @@ class GFF(object):
             self.add_record(cast(GFF3Record, record))
 
         return self
+
+
+def flatten_list_of_lists(li: Sequence[Sequence[T]]) -> Iterator[T]:
+    for i in li:
+        for j in i:
+            yield j
+    return
