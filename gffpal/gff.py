@@ -604,7 +604,7 @@ def make_root_id(
                 feature_map[node].append(node_copy)
                 if ((node.attributes is not None) and
                         (node.attributes.id is not None) and
-                        (root_id_template )):
+                        (root_id_template)):
                     new_id = root_id_template.format(
                         id=node.attributes.id,
                         type=node.type,
@@ -901,6 +901,10 @@ class GFF(object):
     def break_bubbles(
         self,
         records: Optional[Sequence[GFF3Record]] = None,
+        id_template: str = "{id}_{index}",
+        singleton_id_template: Optional[str] = None,
+        root_id_template: Optional[str] = None,
+        global_indices: Optional[Dict[str, int]] = None,
     ) -> "GFF":
         if records is None:
             init_nodes = [f for f in self.inner if len(f.parents) == 0]
