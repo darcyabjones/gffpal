@@ -2,6 +2,7 @@
 *.egg-info
 env
 **__pycache__
+.vscode
 .pytest_cache
 .ipynb_checkpoints
 .mypy_cache

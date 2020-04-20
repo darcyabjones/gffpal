@@ -578,15 +578,17 @@ def make_root_id(
         id_template: str = "{id}_{index}",
         singleton_id_template: Optional[str] = None,
         root_id_template: Optional[str] = None,
-        global_index_start: int = 1
+        global_indices: Optional[Dict[str, int]] = None,
     ) -> "GFF3Record":
         from collections import deque
 
         feature_map: Dict["GFF3Record", List["GFF3Record"]] = defaultdict(list)
         to_visit = deque([self])
-        global_indices: Dict[str, int] = defaultdict(
-            lambda: global_index_start
-        )
+
+        if global_indices is None:
+            global_indices_: Dict[str, int] = defaultdict(lambda: 1)
+        else:
+            global_indices_ = global_indices
 
         while len(to_visit) > 0:
 
@@ -606,7 +608,7 @@ def make_root_id(
                     new_id = root_id_template.format(
                         id=node.attributes.id,
                         type=node.type,
-                        global_index=global_indices[node.type],
+                        global_index=global_indices_[node.type],
                     )
                     node_copy.attributes.id = new_id
 
@@ -614,10 +616,10 @@ def make_root_id(
                 continue
 
             elif len(node.parents) == 1:
-                template_id = "{id}"
+                template_id = singleton_id_template
 
             elif len(node.parents) > 1:
-                template_id = "{id}_{index}"
+                template_id = id_template
 
             flattened_parents = flatten_list_of_lists(
                 feature_map[p]
@@ -629,13 +631,16 @@ def make_root_id(
                 node_copy = node.copy()
                 node_copy.attributes.id = template_id.format(
                     id=node.attributes.id,
+                    type=node.type,
                     index=local_index,
+                    global_index=global_indices_[node.type],
                     parent_id=parent.attributes.id
                 )
 
                 node_copy.add_parent(parent)
                 node_copy.attributes.parent.append(parent.attributes.id)
                 feature_map[node].append(node_copy)
+                global_indices[node.type] += 1
 
         assert len(feature_map[self]) == 1
         return feature_map[self][0]
@@ -892,6 +897,16 @@ class GFF(object):
             yield node
 
         return None
+
+    def break_bubbles(
+        self,
+        records: Optional[Sequence[GFF3Record]] = None,
+    ) -> "GFF":
+        if records is None:
+            init_nodes = [f for f in self.inner if len(f.parents) == 0]
+        else:
+            init_nodes = records
+        return
 
     @classmethod
     def parse(
