@@ -5,10 +5,11 @@ from typing import cast
 from typing import Optional, Union
 from typing import Set, List, Dict, Tuple
 from typing import Sequence, Mapping
-from typing import Iterator
+from typing import Iterable, Iterator
 from typing import Hashable, Any
 from typing import TypeVar, Type
 from typing import Generic
+from copy import copy
 
 from enum import Enum
 from collections import defaultdict
@@ -22,7 +23,12 @@ from gffpal.parsers.parsers import (
     parse_string_not_empty
 )
 
-from gffpal.attributes import Attributes, GFF3Attributes
+from gffpal.attributes import (
+    Attributes,
+    GFF3Attributes,
+    Target,
+    Gap
+)
 from gffpal.higher import fmap, or_else
 
 logger = logging.getLogger(__name__)
@@ -472,6 +478,20 @@ class GFFRecord(Generic[AttrT]):
 
 class GFF3Record(GFFRecord[GFF3Attributes]):
 
+    def update_parents(self) -> None:
+        self.add_attributes_if_none()
+        assert self.attributes is not None
+
+        parent_ids = []
+        for parent in self.parents:
+            assert parent.attributes is not None
+            assert parent.attributes.id is not None
+            parent_id = parent.attributes.id
+            parent_ids.append(parent_id)
+
+        self.attributes.parent = parent_ids
+        return
+
     @classmethod
     def infer_from_children(
         cls,
@@ -519,6 +539,38 @@ class GFF3Record(GFFRecord[GFF3Attributes]):
         )
         return record
 
+    def add_attributes_if_none(
+        self,
+        id: Optional[str] = None,
+        name: Optional[str] = None,
+        alias: Optional[Sequence[str]] = None,
+        parent: Optional[Sequence[str]] = None,
+        target: Optional[Target] = None,
+        gap: Optional[Gap] = None,
+        derives_from: Optional[Sequence[str]] = None,
+        note: Optional[Sequence[str]] = None,
+        dbxref: Optional[Sequence[str]] = None,
+        ontology_term: Optional[Sequence[str]] = None,
+        is_circular: Optional[bool] = None,
+        custom: Optional[Mapping[str, str]] = None,
+    ) -> None:
+        if self.attributes is None:
+            self.attributes = GFF3Attributes(
+                id,
+                name,
+                alias,
+                parent,
+                target,
+                gap,
+                derives_from,
+                note,
+                dbxref,
+                ontology_term,
+                is_circular,
+                custom
+            )
+        return
+
     @staticmethod
     def _infer_id_from_children(children: Sequence["GFF3Record"]) -> str:
         """ Try to predict the id to use based on the children's parents. """
@@ -553,31 +605,62 @@ class GFF3Record(GFFRecord[GFF3Attributes]):
 
         node_copy = copy(self)
         node_copy.attributes = deepcopy(self.attributes)
-        node_copy.attributes.parent = []
+
+        if node_copy.attributes is not None:
+            node_copy.attributes.parent = []
+
         node_copy.children = []
         node_copy.parents = []
         return node_copy
 
-def make_root_id(
-    template: Optional[str],
-    id_: Optional[str],
-    type_: str,
-    global_index: int,
-) -> str:
-    if type_ == ".":
-        type_ = "notype"
+    def create_new_id(
+        self,
+        template: str = "{id}_{index}",
+        index_: Optional[int] = None,
+        global_indices: Optional[Dict[str, int]] = None,
+        extras: Optional[Mapping[str, str]] = None,
+        default_type: str = "notype",
+    ) -> str:
+        if extras is None:
+            values: Dict[str, str] = {}
+        else:
+            values = copy(dict(extras))
 
-    if template is None:
-        return None
+        values["seqid"] = self.seqid
+        values["source"] = self.source
+        values["start"] = str(self.start)
+        values["end"] = str(self.end)
+        values["strand"] = str(self.strand)
 
-    if "{id}" not in tem
-    return
+        if self.type == ".":
+            values["type"] = default_type
+        else:
+            values["type"] = self.type
+
+        if index_ is not None:
+            values["index"] = str(index_)
+
+        if global_indices is not None:
+            values["global_index"] = str(global_indices[values["type"]])
+            global_indices[values["type"]] += 1
+
+        if self.attributes is not None:
+            if self.attributes.id is not None:
+                values["id"] = self.attributes.id
+
+            if len(self.attributes.parent) > 0:
+                values["parent"] = self.attributes.parent[0]
+
+            if self.attributes.name is not None:
+                values["name"] = self.attributes.name
+
+            values.update(self.attributes.custom)
+
+        return template.format(**values)
 
     def break_bubbles(
         self,
         id_template: str = "{id}_{index}",
-        singleton_id_template: Optional[str] = None,
-        root_id_template: Optional[str] = None,
         global_indices: Optional[Dict[str, int]] = None,
     ) -> "GFF3Record":
         from collections import deque
@@ -586,9 +669,9 @@ def make_root_id(
         to_visit = deque([self])
 
         if global_indices is None:
-            global_indices_: Dict[str, int] = defaultdict(lambda: 1)
+            global_indices = defaultdict(lambda: 1)
         else:
-            global_indices_ = global_indices
+            global_indices = global_indices
 
         while len(to_visit) > 0:
 
@@ -597,50 +680,41 @@ def make_root_id(
             if node in feature_map:
                 continue
 
-            to_visit.extend(node.children)
+            to_visit.extend(cast(List[GFF3Record], node.children))
 
             if (len(node.parents) == 0) or (node == self):
                 node_copy = node.copy()
                 feature_map[node].append(node_copy)
-                if ((node.attributes is not None) and
-                        (node.attributes.id is not None) and
-                        (root_id_template)):
-                    new_id = root_id_template.format(
-                        id=node.attributes.id,
-                        type=node.type,
-                        global_index=global_indices_[node.type],
-                    )
-                    node_copy.attributes.id = new_id
-
-                global_indices[node.type] += 1
                 continue
 
-            elif len(node.parents) == 1:
-                template_id = singleton_id_template
-
-            elif len(node.parents) > 1:
-                template_id = id_template
-
-            flattened_parents = flatten_list_of_lists(
-                feature_map[p]
+            flattened_parents = flatten_list_of_lists([
+                feature_map[cast(GFF3Record, p)]
                 for p
                 in node.parents
-            )
+            ])
+
+            should_rename = len(node.parents) > 1
 
             for local_index, parent in enumerate(flattened_parents, 1):
                 node_copy = node.copy()
-                node_copy.attributes.id = template_id.format(
-                    id=node.attributes.id,
-                    type=node.type,
-                    index=local_index,
-                    global_index=global_indices_[node.type],
-                    parent_id=parent.attributes.id
-                )
-
                 node_copy.add_parent(parent)
+
+                # This should be true for any well formed gff
+                assert parent.attributes is not None
+                assert parent.attributes.id is not None
+
+                node_copy.add_attributes_if_none()
+                assert node_copy.attributes is not None
                 node_copy.attributes.parent.append(parent.attributes.id)
                 feature_map[node].append(node_copy)
-                global_indices[node.type] += 1
+
+                if should_rename:
+                    new_id = node_copy.create_new_id(
+                        template=id_template,
+                        index_=local_index,
+                        global_indices=global_indices,
+                    )
+                    node_copy.attributes.id = new_id
 
         assert len(feature_map[self]) == 1
         return feature_map[self][0]
@@ -907,10 +981,30 @@ class GFF(object):
         global_indices: Optional[Dict[str, int]] = None,
     ) -> "GFF":
         if records is None:
-            init_nodes = [f for f in self.inner if len(f.parents) == 0]
+            init_nodes: Sequence[GFF3Record] = [
+                f
+                for f
+                in self.inner
+                if len(f.parents) == 0
+            ]
         else:
             init_nodes = records
-        return
+
+        if global_indices is None:
+            global_indices = defaultdict(lambda: 1)
+
+        out: List[GFF3Record] = []
+        for record in init_nodes:
+            bb_record = record.break_bubbles(
+                id_template,
+                global_indices
+            )
+            out.extend(cast(
+                Iterable,
+                bb_record.traverse_children(breadth=True)
+            ))
+
+        return GFF(out)
 
     @classmethod
     def parse(
@@ -937,7 +1031,7 @@ class GFF(object):
         return self
 
 
-def flatten_list_of_lists(li: Sequence[Sequence[T]]) -> Iterator[T]:
+def flatten_list_of_lists(li: Iterable[Iterable[T]]) -> Iterator[T]:
     for i in li:
         for j in i:
             yield j

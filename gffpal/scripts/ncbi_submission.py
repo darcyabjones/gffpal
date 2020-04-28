@@ -1,186 +1,117 @@
 import sys
 import argparse
 
-from pronto import Ontology
+from typing import Mapping
+from typing import Sequence, List, Set
+from typing import Tuple
 
-from gffpal import GFF
+from pronto import Ontology, Term
+
+from gffpal.gff import GFF
+from gffpal.exceptions import GPInvalidType
+
+"""
+Most of this mapping is based on information here:
+    https://www.ncbi.nlm.nih.gov/genbank/genomes_gff/
+    https://www.ncbi.nlm.nih.gov/genbank/eukaryotic_genome_submission_annotation/
+    http://www.insdc.org/insdc-controlled-vocabularies
+
+Mapping of regulatory elements and repeats is described here:
+    https://www.ncbi.nlm.nih.gov/refseq/functionalelements/
+"""
 
 
-pseudogene_types = [
-    {
-        "type": "processed",
-        "description": "The pseudogene has arisen by reverse transcription of a mRNA into cDNA, followed by reintegration into the genome. Therefore, it has lost any intron/exon structure, and it might have a pseudo-polyA-tail.",
-        "so_term": "SO:0000043",
-        "priority": 2
-    },  # subclass of "pseudogene"
-    {
-        "type": "unprocessed",
-        "description": "The pseudogene has arisen from a copy of the parent gene by duplication followed by accumulation of random mutation. The changes, compared to their functional homolog, include insertions, deletions, premature stop codons, frameshifts and a higher proportion of non-synonymous versus synonymous substitutions.",
-        "so_term": "SO:0001760",
-        "priority": 2
-    },  # subclass of "pseudogene"
-    {
-        "type": "unitary",
-        "description": "The pseudogene has no parent. It is the original gene, which is functional in some species but disrupted in some way (indels, mutation, recombination) in another species or strain.",
-        "so_term": "SO:0001759",
-        "priority": 3
-
-    },  # Unitary is subclass of unprocessed
-    {
-        "type": "allelic",
-        "description": "A (unitary) pseudogene that is stable in the population but importantly it has a functional alternative allele also in the population. i.e., one strain may have the gene, another strain may have the pseudogene. MHC haplotypes have allelic pseudogenes.",
-        "so_term": "SO:0002189",
-        "priority": 4
-    },  # Allelic is subclass of unitary.
-    {
-        "type": "unknown",
-        "description": "The submitter does not know the method of pseudogenisation.",
-        "so_term": "SO:0000336",
-        "priority": 1
-    }
+# This is a mapping of SO terms to INDSC terms in descending order of
+# specificity. Break after the first subclass_of match.
+# Processed is subclass of pseudogene
+# Unprocessed is subclass of pseudogene
+# Unitary is subclass of unprocessed
+# Allelic is subclass of unitary
+# Based on: http://www.insdc.org/documents/pseudogene-qualifier-vocabulary
+PSEUDOGENE_TYPES = [
+    ('SO:0002189', 'allelic'),  # gene
+    ('SO:0002200', 'allelic'),  # tRNA
+    ('SO:0002196', 'allelic'),  # rRNA
+    ('SO:0001759', 'unitary'),  # gene
+    ('SO:0002199', 'unitary'),  # tRNA
+    ('SO:0002195', 'unitary'),  # rRNA
+    ('SO:0001760', 'unprocessed'),  # gene
+    ('SO:0002198', 'unprocessed'),  # rRNA
+    ('SO:0002194', 'unprocessed'),  # rRNA
+    ('SO:0000043', 'processed'),  # gene
+    ('SO:0002197', 'processed'),  # tRNA
+    ('SO:0002193', 'processed'),  # rRNA
+    ('SO:0000336', 'unknown'),  # gene
+    ('SO:0000778', 'unknown'),  # tRNA
+    ('SO:0000777', 'unknown'),  # rRNA
 ]
 
 
-ncrna_types = [
-    {
-        "type": "antisense_RNA",
-        "description": "RNA molecule that is transcribed from the opposite strand of DNA compared to another transcript.",
-        "so_term": "SO:0000644",
-        "priority": 2,
-    },
-    {
-        "type": "autocatalytically_spliced_intron",
-        "description": "self-splicing intron.",
-        "so_term": "SO:0000588",
-        "priority": 1,
-    },
-    {
-        "type": "ribozyme",
-        "description": "ribonucleic acid enzyme, RNA molcule that can catalyse specific biochemical reactions.",
-        "so_term": "SO:0000374",
-        "priority": 1,
-    },
-    {
-        "type": "hammerhead_ribozyme",
-        "description": "Small catalytic RNA motif that catalyzes a self-cleavage reaction. Its name comes from its secondary structure which resembles a carpenter's hammer. The hammerhead ribozyme is involved in the replication of some viroid and satellite RNAs.",
-        "so_term": "SO:0000380",
-        "priority": 1,
-    },
-    {
-        "type": "lncRNA",
-        "description": "Long non-coding RNA; such molecules are generally defined as having a length greater than 200bp and do not fit into any other ncRNA class.",
-        "so_term": "SO:0001877",
-        "priority": 2,
-    },
-    {
-        "type": "RNase_P_RNA",
-        "description": "RNA component of Ribonuclease P (RNase P), a ubiquitous endoribonuclease.",
-        "so_term": "SO:0000386",
-        "priority": 2,
-    },
-    {
-        "type": "RNase_MRP_RNA",
-        "description": "RNA molecule essential for the catalytic activity of RNase MRP, an enzymatically active ribonucleoprotein with two distinct roles in eukaryotes. In mitochondria it plays a direct role in the initiation of mitochondrial DNA replication, while in the nucleus it is involved in precursor rRNA processing.",
-        "so_term": "SO:0000385",
-        "priority": 2,
-    },
-    {
-        "type": "telomerase_RNA",
-        "description": "RNA component of telomerase, a reverse transcriptase that synthesises telomeric DNA.",
-        "so_term": "SO:0000390",
-        "priority": 2,
-    },
-    {
-        "type": "guide_RNA",
-        "description": "Short 3'-uridylated RNA that can form a duplex with a stretch of mature edited mRNA.",
-        "so_term": "SO:0000602",
-        "priority": 2,
-    },
-    {
-        "type": "sgRNA",
-        "description": "A small RNA oligo, typically about 20 bases, that guides the cas nuclease to a target DNA sequence in the CRISPR/cas mutagenesis method.",
-        "so_term": "SO:0001998",
-        "priority": 1,
-    },
-    {
-        "type": "rasiRNA",
-        "description": "Small interfering RNA of length between 17 and 28 nucleotides, derived from the transcript of a repetitive element.",
-        "so_term": "SO:0000454",
-        "priority": 2,
-    },
-    {
-        "type": "scRNA",
-        "description": "Small cytoplasmic RNA; any one of several small cytoplasmic RNA molecules present in the cytoplasm and (sometimes) nucleus of a eukaryote.",
-        "so_term": "SO:0000013",
-        "priority": 2,
-    },
-    {
-        "type": "scaRNA",
-        "description": "An ncRNA, specific to the Cajal body, that has been demonstrated to function as a guide RNA in the site-specific synthesis of 2'-O-ribose-methylated nucleotides and pseudouridines in the RNA polymerase II-transcribed U1, U2, U4 and U5 spliceosomal small nuclear RNAs (snRNAs).",
-        "so_term": "SO:0002095",
-        "priority": 2,
-    },
-    {
-        "type": "siRNA",
-        "description": "SO:0000646",
-        "so_term": "Small RNA molecule that is the product of a longer exogenous or endogenous double stranded RNA, which is either a bimolecular duplex or very long hairpin, processed (via the Dicer pathway) such that numerous siRNAs accumulate from both strands of the double stranded RNA. sRNAs trigger the cleavage of their target molecules.",
-        "priority": 3,
-    },
-    {
-        "type": "pre_miRNA",
-        "description": "The 60-70 nucleotide region remaining after Drosha processing of a microRNA primary transcript, where this region folds back upon itself to form a hairpin structure from which a mature microRNA is processed.",
-        "so_term": "SO:0001244",
-        "priority": 1,
-    },
-    {
-        "type": "miRNA",
-        "description": "Small, ~22-nt, RNA molecule, termed microRNA, produced from precursor molecules that can form local hairpin structures, which ordinarily are processed (via the Dicer pathway) such that a single miRNA molecule accumulates from one arm of a hairpin precursor molecule. MicroRNAs may trigger the cleavage of their target molecules or act as translational repressors.",
-        "so_term": "SO:0000276",
-        "priority": 3,
-    },
-    {
-        "type": "piRNA",
-        "description": "Small RNA molecule, termed Piwi-interacting RNA, expressed in testes and forming RNA-protein complex with Piwi protein; purification of these complexes has revealed that Piwi-interacting RNA oligonucleotides are approximately 24-32 nucleotides long",
-        "so_term": "SO:0001035",
-        "priority": 3,
-    },
-    {
-        "type": "snoRNA",
-        "description": "Small [nucleolar] RNA molecules involved in modification and processing of ribosomal RNA or transfer RNA; found in archaea and in eukaryotic species where they are often localized to the nucleolus, but are not necessarily nucleolar-specific, e.g., some subsets may be scaRNAs that are localized to the Cajal body.",
-        "so_term": "SO:0000275",
-        "priority": 2,
-    },
-    {
-        "type": "snRNA",
-        "description": "Small nuclear RNA molecules involved in pre-mRNA splicing and processing.",
-        "so_term": "SO:0000274",
-        "priority": 2,
-    },
-    {
-        "type": "SRP_RNA",
-        "description": "Signal recognition particle, a universally conserved ribonucleoprotein involved in the co-translational targeting of proteins to membranes.",
-        "so_term": "SO:0000590",
-        "priority": 2,
-    },
-    {
-        "type": "vault_RNA",
-        "description": "RNA component of the vault ribonuceoprotein, a complex which consists of a major vault protein (MVP), two minor vault proteins (VPARP and TEP1), and several small RNA molecules and has been suggested to be involved in drug resistance.",
-        "so_term": "SO:0000404",
-        "priority": 2,
-    },
-    {
-        "type": "Y_RNA",
-        "description": "Component of the Ro ribonucleoprotein particle (Ro RNP), in association with Ro60 and La proteins.",
-        "so_term": "SO:0000405",
-        "priority": 2,
-    },
-    {
-        "type": "other",
-        "description": "SO:0000655",
-        "so_term": "ncRNA_class not included in any other term",
-        "priority": 1,
-    },
+# Repeat info: http://www.insdc.org/controlled-vocabulary-rpttype-qualifier
+# Satellite info:
+# http://www.insdc.org/controlled-vocabulary-satellite-qualifier
+
+# This is a mapping of SO terms to INDSC terms in descending order of
+# specificity. Break after the first subclass_of match.
+# Based on: http://www.insdc.org/documents/ncrna-vocabulary
+NCRNA_TYPES = [
+    ('SO:0001035', 'piRNA'),
+    ('SO:0000276', 'miRNA'),
+    ('SO:0000646', 'siRNA'),
+    ('SO:0002095', 'scaRNA'),
+    ('SO:0000013', 'scRNA'),
+    ('SO:0000454', 'rasiRNA'),
+    ('SO:0000602', 'guide_RNA'),
+    ('SO:0000390', 'telomerase_RNA'),
+    ('SO:0000385', 'RNase_MRP_RNA'),
+    ('SO:0000386', 'RNase_P_RNA'),
+    ('SO:0001877', 'lncRNA'),
+    ('SO:0000644', 'antisense_RNA'),
+    ('SO:0000405', 'Y_RNA'),
+    ('SO:0000404', 'vault_RNA'),
+    ('SO:0000590', 'SRP_RNA'),
+    ('SO:0000274', 'snRNA'),
+    ('SO:0000275', 'snoRNA'),
+    ('SO:0001998', 'sgRNA'),
+    ('SO:0000380', 'hammerhead_ribozyme'),
+    ('SO:0000374', 'ribozyme'),
+    ('SO:0000588', 'autocatalytically_spliced_intron'),
+    ('SO:0001244', 'pre_miRNA'),
+    ('SO:0000655', 'other')
 ]
+
+NCRNA_EXCLUDE_TYPES = [
+    "SO:0000253",  # tRNA
+    "SO:0000252",  # rRNA
+]
+
+
+TRNA_PRODUCTS = {
+    "tRNA": "tRNA-Xxx",
+    "alanyl_tRNA": "tRNA-Ala",
+    "glutaminyl_tRNA": "tRNA-Gln",
+    "prolyl_tRNA": "tRNA-Pro",
+    "glutamyl_tRNA": "tRNA-Glu",
+    "methionyl_tRNA": "tRNA-Met",
+    "asparaginyl_tRNA": "tRNA-Asn",
+    "threonyl_tRNA": "tRNA-Thr",
+    "glycyl_tRNA": "tRNA-Gly",
+    "valyl_tRNA": "tRNA-Val",
+    "tyrosyl_tRNA": "tRNA-Tyr",
+    "cysteinyl_tRNA": "tRNA-Cys",
+    "isoleucyl_tRNA": "tRNA-Ile",
+    "seryl_tRNA": "tRNA-Ser",
+    "leucyl_tRNA": "tRNA-Leu",
+    "selenocysteinyl_tRNA": "tRNA-Sec",
+    "tryptophanyl_tRNA": "tRNA-Trp",
+    "pyrrolysyl_tRNA": "tRNA-Pyl",
+    "lysyl_tRNA": "tRNA-Lys",
+    "aspartyl_tRNA": "tRNA-Asp",
+    "arginyl_tRNA": "tRNA-Arg",
+    "histidyl_tRNA": "tRNA-His",
+    "mt_tRNA": "Mitochondrial tRNA",
+    "phenylalanyl_tRNA": "tRNA-Phe",
+}
 
 
 def cli_ncbi(parser: argparse.ArgumentParser) -> None:
@@ -233,42 +164,56 @@ def cli_ncbi(parser: argparse.ArgumentParser) -> None:
     )
 
     parser.add_argument(
-        "--mrna-id-format",
+        "--rna-id-format",
         type=str,
-        default="{parent_gene}_mRNA{index}",
-        help="The format for mRNA feature ids."
+        default="{type_lowercase}.{locus_tag}{alpha_index}",
+        help="The format for RNA feature ids."
     )
 
     parser.add_argument(
         "--cds-id-format",
         type=str,
-        default="{parent_mrna}_CDS",
-        help="The format for mRNA feature ids."
+        default="{locus_tag}{parent_alpha_index}",
+        help="The format for CDS feature ids."
     )
 
     parser.add_argument(
-        "--exon-id-format",
+        "--other-id-format",
         type=str,
-        default="{parent_mrna}_exon{index}",
-        help="The format for mRNA feature ids."
+        default="{type_lowercase}{index}.{locus_tag}{parent_alpha_index}",
+        help="The format for other feature ids (e.g exons)."
     )
 
     parser.add_argument(
         "--cds-name-format",
         type=str,
-        default="{parent_gene}_protein{parent_mrna_index}"
+        default="{locus_tag}{parent_alpha_index}"
     )
 
     parser.add_argument(
         "--transcript-id-format",
         type=str,
-        default="gnl|{locus_tag_prefix}|gene{locus_tag_index}_{type}{index}",
+        default=(
+            "gnl|{locus_tag_prefix}|"
+            "{type_lowercase}.{locus_tag}{alpha_index}"
+        ),
+        help=(
+            "What the `transcript_id` field in rna features should be. "
+            "The default is based on the NCBIs suggested naming scheme."
+        )
     )
 
     parser.add_argument(
         "--protein-id-format",
         type=str,
-        default="gnl|{locus_tag_prefix}|gene{locus_tag_index}_protein{parent_mrna_index}",
+        default=(
+            "gnl|{locus_tag_prefix}|"
+            "{locus_tag}{parent_alpha_index}"
+        ),
+        help=(
+            "What the `protein_id` field in CDS features should be. "
+            "The default is based on the NCBIs suggested naming scheme."
+        )
     )
 
     parser.add_argument(
@@ -282,10 +227,153 @@ def cli_ncbi(parser: argparse.ArgumentParser) -> None:
         type=str,
         default="hypothetical protein"
     )
+
+    parser.add_argument(
+        "--rna-isoform-product-suffix",
+        type=str,
+        default="isoform {alpha_index}"
+    )
+
+    parser.add_argument(
+        "--cds-isoform-product-suffix",
+        type=str,
+        default="isoform {parent_alpha_index}"
+    )
+
+    parser.add_argument(
+        "--pseudogene-suffix",
+        type=str,
+        default="pseudogene"
+    )
+    return
+
+
+def add_so_as_ontologies(gff: GFF, name_to_so: Mapping[str, Term]) -> None:
+    for record in gff:
+        record.add_attributes_if_none()
+        assert record.attributes is not None
+
+        if record.type not in name_to_so:
+            raise GPInvalidType(record)
+
+        so_term = name_to_so[record.type]
+        record.attributes.ontology_term.append(so_term.id)
+    return
+
+
+def add_ncrna_types(
+    gff: GFF,
+    name_to_so: Mapping[str, Term],
+    so: Ontology,
+    ncrna_types: Sequence[Tuple[str, str]] = NCRNA_TYPES,
+    ncrna_exclude_types: List[str] = NCRNA_EXCLUDE_TYPES,
+) -> None:
+    ncrna_so_terms = [
+        (s, i, set(so[s].subclasses()))
+        for s, i
+        in ncrna_types
+    ]
+
+    ncrna_exclude_terms: Set[str] = set()
+    for s in ncrna_exclude_types:
+        ncrna_exclude_terms.update(so[s].subclasses())
+
+    for record in gff:
+        record.add_attributes_if_none()
+        assert record.attributes is not None
+
+        if record.type not in name_to_so:
+            raise GPInvalidType(record)
+
+        so_term = name_to_so[record.type]
+
+        if "ncRNA_class" in record.attributes.custom:
+            continue
+        elif so_term in ncrna_exclude_terms:
+            continue
+
+        replacement = None
+        for s, i, sub in ncrna_so_terms:
+            if so_term in sub:
+                record.attributes.custom["ncRNA_class"] = i
+                replacement = so[s]
+                break
+
+        if replacement is not None:
+            if so_term.id not in record.attributes.ontology_term:
+                record.attributes.ontology_term.append(so_term.id)
+
+            record.type = replacement.name
+
+    return
+
+
+def add_pseudogene_types(
+    gff: GFF,
+    name_to_so: Mapping[str, Term],
+    so: Ontology,
+    pseudogene_types: Sequence[Tuple[str, str]] = PSEUDOGENE_TYPES,
+) -> None:
+    pseudogene_so_terms = [
+        (s, i, set(so[s].subclasses()))
+        for s, i
+        in pseudogene_types
+    ]
+
+    for record in gff:
+        record.add_attributes_if_none()
+        assert record.attributes is not None
+
+        if "pseudogene" in record.attributes.custom:
+            continue
+
+        if record.type not in name_to_so:
+            raise GPInvalidType(record)
+
+        so_term = name_to_so[record.type]
+        replacement = None
+        for s, i, sub in pseudogene_so_terms:
+            if so_term in sub:
+                record.attributes.custom["pseudogene"] = i
+                record.attributes.custom["pseudo"] = "true"
+                replacement = so[s]
+                break
+
+        if replacement is not None:
+            if so_term.id not in record.attributes.ontology_term:
+                record.attributes.ontology_term.append(so_term.id)
+
+            record.type = replacement.name
+    return
+
+
+def replace_genes(gff: GFF, name_to_so: Mapping[str, Term]) -> None:
+    gene_subtypes = set(name_to_so["gene"].subclasses())
+    gene_subtypes.update(name_to_so["pseudogene"].subclasses())
+
+    gene_subtypes = {
+        term.name
+        for term
+        in name_to_so["gene"].subclasses()
+    }
+
+    for record in gff:
+        pass
     return
 
 
 def ncbi(args: argparse.Namespace) -> None:
-    gff = GFF.parse(args.infile)
-    for line in gff
+    gff = GFF.parse(args.infile).break_bubbles()
+    so = Ontology.from_obo_library(args.so)
+
+    name_to_so = {
+        term.name: term
+        for term
+        in so.values()
+    }
+
+    add_so_as_ontologies(gff, name_to_so)
+    add_ncrna_types(gff, name_to_so, so, NCRNA_TYPES)
+    add_pseudogene_types(gff, name_to_so, so, PSEUDOGENE_TYPES)
+
     return

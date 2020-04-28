@@ -1,4 +1,5 @@
 from enum import IntEnum
+from gffpal.gff import GFFRecord
 
 
 class ECode(IntEnum):
@@ -36,6 +37,9 @@ class GPException(Exception):
         self.msg = msg
         return
 
+    def __str__(self) -> str:
+        return self.msg
+
 
 class GPCLIError(GPException):
 
@@ -45,3 +49,18 @@ class GPCLIError(GPException):
 class GPMissingID(GPException):
 
     ecode = ECode.DATAERR
+
+
+class GPInvalidType(GPException):
+
+    ecode = ECode.DATAERR
+
+    def __init__(self, record: GFFRecord) -> None:
+        self.record = GFFRecord
+        return
+
+    def __str__(self) -> str:
+        return (
+            "Encountered a record with a type that isn't in the sequence "
+            f"ontology. {repr(self.record)}"
+        )

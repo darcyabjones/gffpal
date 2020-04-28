@@ -111,7 +111,7 @@ def main():
         else:
             raise ValueError("I shouldn't reach this point ever")
     except GPException as e:
-        print(f"Error: {e.msg}")
+        print(f"Error: {str(e)}")
         sys.exit(e.ecode)
     except BrokenPipeError:
         # Pipes get closed and that's normal
