@@ -15,9 +15,18 @@ Most of this mapping is based on information here:
     https://www.ncbi.nlm.nih.gov/genbank/genomes_gff/
     https://www.ncbi.nlm.nih.gov/genbank/eukaryotic_genome_submission_annotation/
     http://www.insdc.org/insdc-controlled-vocabularies
+    https://www.ncbi.nlm.nih.gov/genomes/locustag/Proposal.pdf
+    https://www.ncbi.nlm.nih.gov/genbank/evidence/
+    http://www.insdc.org/documents/feature-table
+    https://www.ncbi.nlm.nih.gov/genbank/collab/db_xref/
 
 Mapping of regulatory elements and repeats is described here:
     https://www.ncbi.nlm.nih.gov/refseq/functionalelements/
+
+
+Other tools:
+    http://genomeannotation.github.io/GAG/
+    http://genomeannotation.github.io/annie/
 """
 
 

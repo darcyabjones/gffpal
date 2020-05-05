@@ -180,6 +180,9 @@ class GFFRecord(Generic[AttrT]):
         return
 
     def __str__(self) -> str:
+        return self.as_str(escape=True)
+
+    def as_str(self, escape: bool = False) -> str:
         values = []
         for name in self.columns:
             value = getattr(self, name)
@@ -189,6 +192,8 @@ class GFFRecord(Generic[AttrT]):
             # Convert back to 1-based inclusive indexing.
             elif name == "start":
                 values.append(str(value + 1))
+            elif name == "attributes" and not escape:
+                values.append(value.as_str(escape=False))
             else:
                 values.append(str(value))
 
@@ -708,7 +713,7 @@ class GFF3Record(GFFRecord[GFF3Attributes]):
                 node_copy.attributes.parent.append(parent.attributes.id)
                 feature_map[node].append(node_copy)
 
-                if should_rename:
+                if should_rename and (node_copy.attributes.id is not None):
                     new_id = node_copy.create_new_id(
                         template=id_template,
                         index_=local_index,

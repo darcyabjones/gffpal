@@ -672,6 +672,9 @@ class GFF3Attributes(Attributes):
                 (len(self.custom) == 0))
 
     def __str__(self) -> str:
+        return self.as_str(escape=True)
+
+    def as_str(self, escape: bool = False) -> str:
         # Avoid having an empty string at the end.
         if self.is_empty():
             return "."
@@ -686,16 +689,23 @@ class GFF3Attributes(Attributes):
             if value is None or value == []:
                 continue
 
-            key = self._attr_escape(key)
+            if escape:
+                key = self._attr_escape(key)
 
-            if isinstance(value, list):
+            if isinstance(value, list) and escape:
                 value = ",".join(self._attr_escape(str(v)) for v in value)
+
+            elif isinstance(value, list):
+                value = ",".join(str(v) for v in value)
 
             elif isinstance(value, bool):
                 value = "true" if value else "false"
 
             else:
-                value = self._attr_escape(str(value))
+                if escape:
+                    value = self._attr_escape(str(value))
+                else:
+                    value = str(value)
 
             kvpairs.append((key, value))
 
