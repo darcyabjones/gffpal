@@ -11,6 +11,7 @@ from gffpal.scripts.exonerate2gff import exonerate2gff, cli_exonerate2gff
 from gffpal.scripts.add_antifam import add_antifam, cli_add_antifam
 from gffpal.scripts.add_parents import add_parents, cli_add_parents
 from gffpal.scripts.select import select, cli_select
+from gffpal.scripts.coords_to_contigs import coords, cli_coords
 
 logging.basicConfig(level=logging.ERROR)
 
@@ -80,6 +81,13 @@ def cli(prog, args):
 
     cli_select(select_subparser)
 
+    coord_subparser = subparsers.add_parser(
+        "coord2contig",
+        help="Get some contigs given an alignment"
+    )
+
+    cli_coords(coord_subparser)
+
     parsed = parser.parse_args(args)
 
     if parsed.subparser_name is None:
@@ -108,6 +116,8 @@ def main():
             add_parents(args)
         elif args.subparser_name == "select":
             select(args)
+        elif args.subparser_name == "coord2contig":
+            coords(args)
         else:
             raise ValueError("I shouldn't reach this point ever")
     except GPException as e:

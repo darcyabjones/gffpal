@@ -12,6 +12,29 @@ This is intended for my own use and I'm motivated by ease of use rather than com
 But if you have thoughts, contributions, or whatever, please raise an issue to get in touch.
 
 
+## Installing
+
+At the moment things tend to just be written directly to the master github branch and I don't do much versioning.
+
+Until that changes, i'd suggest installing from here :)
+If you want versioned point releases let me know.
+
+If you have `git` and `python3` installed you can do:
+
+```
+python3 -m pip install git+https://github.com/darcyabjones/gffpal.git
+```
+
+If you aren't using a virtualenv or conda env, i'd suggest using the `--user` option to avoid messing with your root packages.
+
+```
+python3 -m pip install --user git+https://github.com/darcyabjones/gffpal.git
+```
+
+There are ways to ask it to install specific commits, or to use the master zip if you don't have `git` installed.
+Create an issue if you feel it would help you.
+
+
 ## Available scripts
 
 All scripts are subcommands under the gffpal command.
@@ -106,3 +129,46 @@ Basic usage:
 ```
 gffpal exonerate2gff -o "exonerate.gff3" exonerate.gff2
 ```
+
+
+#### `gffpal coord2contig`
+
+
+Coord to contig attempts to find the best non-overlapping set of contigs given
+a nucmer coords alignment to the scaffolds of the same assembly.
+
+Essentially it just iteratively selects alignments based on their length, % identity, contig coverage, and how much they overlap with other contig alignments.
+The remaining overlapping alignments are split at the intersection of the two based on the following:
+
+1. If there is a stretch of N-s in the intersection, split the alignment intersection at the one closest to one of the alignment ends.
+2. If one (and only one) of the contig alignments goes to the end of the contig, then the whole alignment intersection gets assigned to that one and the two contigs will "butt" against each other without an N-stretch.
+3. Otherwise, extract the sequences corresponding to the intersection for each contig, locally align it to the scaffold section, and take the highest scoring match.
+   In the case of a tie, the left-most contig will win.
+
+To use, align your scaffolds and contigs using Nucmer and get the coords file.
+I used MUMmer version 4.0.0beta2.
+
+
+```
+nucmer --breaklen 400 --threads 4 \
+  --delta genome.delta \
+  scaffolds.fasta \
+  contigs.fasta
+
+show-coords -T -c -l -o genome.delta > genome.coords
+```
+
+Then you can run coord2contig like so:
+
+```
+gffpal coord2contig -o contig.gff3 genome.coords scaffolds.fasta contigs.fasta
+```
+
+
+You can also get the good matches from the coords file as a gff (before trying to resolve overlaps) using the `--matches` flag.
+
+Note that the SPAdes assembler doesn't give a nice 1-1 contig tiling path, some of the contigs overlap, and sometimes it will add some extra sequence between the contigs.
+So it's entirely possible that there will be non-N sequence that isn't covered by the contig features in the GFF.
+I don't do anything with this at the moment, but could add an option to extend contigs to include such sequence, or create new contigs to cover it.
+
+Use `gffpal coord2contig --help` for full options.
