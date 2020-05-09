@@ -648,15 +648,26 @@ def split_overlaps(
 
                 continue
 
-            interval.data = decide_if_complete_match(left, right)
-            if len(interval.data) == 1:
+            interval_data = decide_if_complete_match(left, right)
+            if len(interval_data) == 1:
+                itree.remove(interval)
+                itree.add(Interval(
+                    interval.begin,
+                    interval.end,
+                    interval_data
+                ))
                 continue
 
             scaffold_seq = extract_scaffold_seq(scaffolds[scaffold], interval)
             contig_seqs = extract_contig_seqs(contigs, interval)
 
             best = align_intersections(contig_seqs, scaffold_seq)
-            interval.data = [best]
+            itree.remove(interval)
+            itree.add(Interval(
+                interval.begin,
+                interval.end,
+                [best]
+            ))
 
     return
 
