@@ -597,17 +597,23 @@ def split_at_nstretch(
     # This should be 0 (if the whole intersection is N), 1 (if the nstretch
     # buts one of the ends), or 2 (if internal split).
     assert len(split_intervals) <= 2, split_intervals
+    split_intervals_with_data = []
     for i in split_intervals:
         assert not ((i.begin == interval.begin) and (i.end == interval.end))
 
-        i.data = None
+        data = None
         if i.begin == interval.begin:
-            i.data = left
+            data = left
         elif i.end == interval.end:
-            i.data = right
+            data = right
 
-        assert i.data is not None
-    return split_intervals
+        assert data is not None
+        split_intervals_with_data.append(Interval(
+            i.begin,
+            i.end,
+            data
+        ))
+    return split_intervals_with_data
 
 
 def split_overlaps(
@@ -684,7 +690,7 @@ def merge_adjacent_intervals(itree: IntervalTree) -> List[Interval]:
         elif ((interval.begin == previous.end) and
               (interval.data == previous.data)):
             # Extend the interval!
-            previous.end = interval.end
+            previous = Interval(previous.begin, interval.end, previous.data)
         elif interval.begin > previous.end:
             out.append(interval)
             previous = interval
