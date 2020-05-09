@@ -547,9 +547,9 @@ def extract_contig_seqs(
         seqrecord = contigs[coord.query]
 
         if coord.strand == Strand.MINUS:
-            seq = seqrecord.seq[coord.qstart, coord.qend].reverse_complement()
+            seq = seqrecord.seq[coord.qstart: coord.qend].reverse_complement()
         else:
-            seq = seqrecord.seq[coord.qstart, coord.qend]
+            seq = seqrecord.seq[coord.qstart: coord.qend]
 
         out.append((coord, str(seq)[rstart: rend]))
 
