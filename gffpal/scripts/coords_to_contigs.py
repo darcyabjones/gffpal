@@ -604,6 +604,10 @@ def align_intersections(
             penalize_end_gaps=False,
             score_only=True
         )
+
+        if isinstance(score, list):
+            score = 0
+
         if score > max_score:
             best = coord
             max_score = score
