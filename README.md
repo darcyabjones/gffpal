@@ -142,8 +142,14 @@ The remaining overlapping alignments are split at the intersection of the two ba
 
 1. If there is a stretch of N-s in the intersection, split the alignment intersection at the one closest to one of the alignment ends.
 2. If one (and only one) of the contig alignments goes to the end of the contig, then the whole alignment intersection gets assigned to that one and the two contigs will "butt" against each other without an N-stretch.
-3. Otherwise, extract the sequences corresponding to the intersection for each contig, locally align it to the scaffold section, and take the highest scoring match.
+3. If there is an n-stretch immediately next to the intersection, the one that is unbroken gets the region.
+4. Otherwise, extract the sequences corresponding to the intersection for each contig, locally align it to the scaffold section, and take the highest scoring match.
    In the case of a tie, the left-most contig will win.
+
+Optionally, with the `--extend` parameter, the program will try to extend the "contigs" to fill space between contigs or the ends of sequences, trim any contig ends at N's, and add contigs to fill in any stretches of unassigned genome that don't overlap an N-stretch longer than specified by the `--nstretch` parameter. Effectively this becomes similar to the old strategy of splitting the genome at N-stretches, but you won't necessarily split contigs that have good alignments crossing them and you'll catch cases of butting contigs with no Ns separating them.
+
+Note that the SPAdes assembler doesn't give a nice 1-1 contig tiling path, some of the contigs overlap, and sometimes it will add some extra sequence between the contigs.
+The extend option can be useful for finding something approximating a tiling path.
 
 To use, align your scaffolds and contigs using Nucmer and get the coords file.
 I used MUMmer version 4.0.0beta2.
@@ -167,8 +173,8 @@ gffpal coord2contig -o contig.gff3 genome.coords scaffolds.fasta contigs.fasta
 
 You can also get the good matches from the coords file as a gff (before trying to resolve overlaps) using the `--matches` flag.
 
-Note that the SPAdes assembler doesn't give a nice 1-1 contig tiling path, some of the contigs overlap, and sometimes it will add some extra sequence between the contigs.
-So it's entirely possible that there will be non-N sequence that isn't covered by the contig features in the GFF.
-I don't do anything with this at the moment, but could add an option to extend contigs to include such sequence, or create new contigs to cover it.
+Mummer alignments will be given the type `nucleotide_match` (SO:0000347).
+Contigs will be given the `contig` type (SO:0000149), and n-stretches will have the `gap` type (SO:0000730).
+
 
 Use `gffpal coord2contig --help` for full options.

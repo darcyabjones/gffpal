@@ -640,9 +640,31 @@ def split_at_nstretch(
         split_intervals_with_data.append(Interval(
             i.begin,
             i.end,
-            data
+            [data]
         ))
     return split_intervals_with_data
+
+
+def select_by_adjacent_nstretch(
+    interval: Interval,
+    left: Coords,
+    right: Coords,
+    nstretches: Sequence[Interval],
+) -> List[Interval]:
+    best_nstretch = find_best_nstretch(interval, left, right, nstretches)
+
+    data = None
+    if interval.begin >= best_nstretch.end:
+        data = right
+    elif interval.end <= best_nstretch.begin:
+        data = left
+
+    assert data is not None, (interval, best_nstretch)
+    return Interval(
+        interval.begin,
+        interval.end,
+        [data]
+    )
 
 
 def split_overlaps(
@@ -650,8 +672,14 @@ def split_overlaps(
     nstretches: Mapping[str, IntervalTree],
     scaffolds: Mapping[str, SeqRecord],
     contigs: Mapping[str, SeqRecord],
+    nstretch_tolerance: int = 1,
 ) -> None:
+    """
+    Note that if nstretch_tolerance > 1, we probably need a way of removing
+    short contig ends.
+    """
     for scaffold, itree in itrees.items():
+        print(scaffold)
         itree.split_overlaps()
         itree.merge_overlaps(
             data_reducer=lambda x, y: x + [y],
@@ -691,6 +719,28 @@ def split_overlaps(
                     interval.end,
                     interval_data
                 ))
+                continue
+
+            # This handles the case where one an intersection immediately
+            # borders an n-stretch. Sometimes mummer can be a bit overzealous
+            # trying to align across gaps.
+            # Usually one of the alignments should butt up against the stretch
+            # but just in case neither are "complete" matches.
+            interval_plus = Interval(
+                interval.begin - nstretch_tolerance,
+                interval.end + nstretch_tolerance,
+            )
+            n_overlaps = nstretches[scaffold].overlap(interval_plus)
+            if len(n_overlaps) > 0:
+                best = select_by_adjacent_nstretch(
+                    interval,
+                    left,
+                    right,
+                    n_overlaps
+                )
+                itree.remove(interval)
+                itree.add(best)
+
                 continue
 
             scaffold_seq = extract_scaffold_seq(scaffolds[scaffold], interval)
