@@ -679,7 +679,6 @@ def split_overlaps(
     short contig ends.
     """
     for scaffold, itree in itrees.items():
-        print(scaffold)
         itree.split_overlaps()
         itree.merge_overlaps(
             data_reducer=lambda x, y: x + [y],
