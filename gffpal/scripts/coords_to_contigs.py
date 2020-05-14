@@ -20,7 +20,8 @@ from Bio.pairwise2 import align
 
 from intervaltree import IntervalTree, Interval
 
-from gffpal.gff import Strand
+from gffpal.gff import GFF3Record, Strand, Phase
+from gffpal.gff import GFF3Attributes
 from gffpal.parsers.coords import Coords
 
 
@@ -41,6 +42,17 @@ def cli_coords(parser):
         "contigs",
         type=argparse.FileType('r'),
         help="The contigs fasta file.",
+    )
+
+    parser.add_argument(
+        "-e", "--extend",
+        action="store_true",
+        default=False,
+        help=(
+            "Try to extend the contigs to include adjacent non-N sequence. "
+            "Trim regions of Ns from the ends of sequences, and create new "
+            "contigs for short regions not covered by N-stretches or contigs."
+        )
     )
 
     parser.add_argument(
@@ -93,6 +105,20 @@ def cli_coords(parser):
     )
 
     parser.add_argument(
+        "-r", "--no-print-nstretch",
+        dest="print_nstretch",
+        action="store_false",
+        default=True,
+        help=(
+            "Don't print the locations of long stretches of N in the contig "
+            "gff. These features will all have the type 'gap' (SO:0000730); "
+            "however, in many cases the length of the gap will be unknown. "
+            "In the absence of a SO term for gap with unknown length, i'm "
+            "using this. Please resolve in your own way if you need to."
+        )
+    )
+
+    parser.add_argument(
         "-o", "--outfile",
         type=argparse.FileType('w'),
         default=sys.stdout,
@@ -101,9 +127,9 @@ def cli_coords(parser):
 
     parser.add_argument(
         "-m", "--matches",
-        type=argparse.FileType('w'),
-        default=None,
-        help="Write the un-processed mummer matches out to a gff3 file too."
+        action="store_true",
+        default=False,
+        help="Write the un-processed mummer matches out to the gff3 file too."
     )
     return
 
@@ -122,12 +148,15 @@ def find_n_stretches(
             if base.upper() == "N":
                 n_count += 1
 
-            elif n_count > n_stretch:
+            elif n_count >= n_stretch:
                 interval = Interval(i - n_count, i)
                 itrees[scaffold].add(interval)
                 n_count = 0
 
-        if n_count > n_stretch:
+            else:
+                n_count = 0
+
+        if n_count >= n_stretch:
             interval = Interval(i - n_count, i)
             itrees[scaffold].add(interval)
 
@@ -685,26 +714,207 @@ def merge_adjacent_intervals(itree: IntervalTree) -> List[Interval]:
     previous = None
     for interval in intervals:
         if previous is None:
-            out.append(interval)
             previous = interval
         elif ((interval.begin == previous.end) and
               (interval.data == previous.data)):
             # Extend the interval!
             previous = Interval(previous.begin, interval.end, previous.data)
-        elif interval.begin > previous.end:
-            out.append(interval)
+        elif interval.begin >= previous.end:
+            out.append(previous)
             previous = interval
-
         else:
             raise AssertionError(
                 "Somehow we got two overlapping intervals at this stage."
                 f"left: {previous}, right: {interval}."
             )
 
+    if previous is not None:
+        out.append(previous)
+
     return out
 
 
-def coords(args: argparse.Namespace) -> None:
+def extend_contigs(
+    itrees: Mapping[str, IntervalTree],
+    nstretches: Mapping[str, IntervalTree],
+    scaffolds: Mapping[str, SeqRecord]
+) -> None:
+    for scaffold, seq in scaffolds.items():
+        new_contigs: List[Interval] = list()
+        contigs = sorted(itrees[scaffold], key=lambda x: x.begin)
+        nstretches_itree = nstretches[scaffold]
+
+        for i in range(len(contigs)):
+
+            if i == 0:
+                last_contig_end = 0
+            else:
+                last_contig_end = new_contigs[-1].end
+
+            if i == len(contigs) - 1:
+                next_contig_start = len(seq)
+            else:
+                next_contig_start = contigs[i + 1].begin
+
+            contig = contigs[i]
+
+            if contig.begin > last_contig_end:
+                ns = nstretches_itree.overlap(last_contig_end, contig.begin)
+                if len(ns) > 0:
+                    n = sorted(ns, key=lambda x: x.end)[-1]
+                    # If an stretch is actually at the junction, this could
+                    # bump the contig start back.
+                    contig = Interval(n.end, contig.end, contig.data)
+                elif last_contig_end == 0:
+                    contig = Interval(0, contig.end, contig.data)
+                else:
+                    contig = Interval(last_contig_end, contig.end, contig.data)
+
+            if contig.end < next_contig_start:
+                ns = nstretches_itree.overlap(contig.end, next_contig_start)
+                if len(ns) > 0:
+                    n = sorted(ns, key=lambda x: x.begin)[0]
+                    # If an stretch is actually at the junction, this could
+                    # bump the contig start back.
+                    contig = Interval(contig.begin, n.begin, contig.data)
+                elif next_contig_start == len(seq):
+                    contig = Interval(contig.begin,
+                                      next_contig_start, contig.data)
+                else:
+                    halfway = (contig.end +
+                               ceil((next_contig_start - contig.end) / 2))
+                    contig = Interval(contig.begin, halfway, contig.data)
+
+            new_contigs.append(contig)
+
+        itrees[scaffold] = IntervalTree(new_contigs)
+    return
+
+
+def trim_contigs(
+    itrees: Mapping[str, IntervalTree],
+    scaffolds: Mapping[str, SeqRecord],
+) -> None:
+    for scaffold, seq in scaffolds.items():
+        new_contigs = list()
+
+        contigs = sorted(itrees[scaffold], key=lambda x: x.begin)
+        last_end = 0
+
+        for i in range(len(contigs)):
+            contig = contigs[i]
+            assert contig.begin >= last_end
+
+            last_end = contig.end
+
+            j = contig.begin
+            while (j < len(seq)) and (seq.seq[j] == "N"):
+                j += 1
+
+            if j != contig.begin:
+                contig = Interval(j, contig.end, contig.data)
+
+            k = contig.end - 1
+            while (k >= 0) and (seq.seq[k] == "N"):
+                k -= 1
+
+            if k != contig.end - 1:
+                contig = Interval(contig.begin, k + 1, contig.data)
+
+            if len(contig) > 1:
+                new_contigs.append(contig)
+        itrees[scaffold] = IntervalTree(new_contigs)
+    return
+
+
+def find_remaining(
+    itrees: Mapping[str, IntervalTree],
+    nstretches: Mapping[str, IntervalTree],
+    scaffolds: Mapping[str, SeqRecord],
+) -> None:
+    for scaffold, seq in scaffolds.items():
+        contigs = itrees[scaffold]
+        nstretch = nstretches[scaffold]
+
+        # This is just to remove the data from the intervals.
+        # Having data prevents them from being removed with difference.
+        intervals = [Interval(i.begin, i.end) for i in contigs]
+        intervals.extend(Interval(i.begin, i.end) for i in nstretch)
+        covered = IntervalTree(intervals)
+        # Strict=false means that adjacent but non-overlapping
+        # will also be merged.
+        covered.merge_overlaps(strict=False)
+
+        remaining = IntervalTree([Interval(0, len(seq))]) | covered
+        remaining.split_overlaps()
+        remaining.difference_update(covered)
+
+        itrees[scaffold].update(remaining)
+    return
+
+
+def coord_to_interval(
+    interval: Interval,
+    index: int,
+    ndigits: int,
+    source: str,
+) -> GFF3Record:
+    assert len(interval.data) == 1, interval
+    gffrecord = interval.data[0].as_gffrecord()
+    gffrecord.start = interval.begin
+    gffrecord.end = interval.end
+    gffrecord.type = "contig"
+    gffrecord.attributes.id = f"contig{index:0>{ndigits}}"
+
+    # Because we split some of them, i want the alignment info in the
+    # attributes.
+    gffrecord.attributes.custom.update({
+        "scaffold_alignment_start": interval.data[0].rstart,
+        "scaffold_alignment_end": interval.data[0].rend,
+    })
+    gffrecord.attributes.note.append(
+        "Contigs aligned to scaffolds using MUMmer"
+    )
+
+    gffrecord.source = source
+    return gffrecord
+
+
+def remaining_to_gffrecord(
+    seqid: str,
+    interval: Interval,
+    index: int,
+    ndigits: int,
+    source: str,
+) -> GFF3Record:
+    return GFF3Record(
+        seqid,
+        source,
+        "contig",
+        interval.begin,
+        interval.end,
+        None,
+        Strand.UNSTRANDED,
+        Phase.NOT_CDS,
+        GFF3Attributes(id=f"contig{index:0>{ndigits}}")
+    )
+
+
+def gap_to_gffrecord(seqid: str, interval: Interval) -> GFF3Record:
+    return GFF3Record(
+        seqid,
+        "gffpal",
+        "gap",
+        interval.begin,
+        interval.end,
+        None,
+        Strand.UNSTRANDED,
+        Phase.NOT_CDS,
+        GFF3Attributes()
+    )
+
+
+def coords(args: argparse.Namespace) -> None:  # noqa
     contig_seqs = SeqIO.to_dict(SeqIO.parse(args.contigs, "fasta"))
     scaffold_seqs = SeqIO.to_dict(SeqIO.parse(args.scaffolds, "fasta"))
 
@@ -717,17 +927,15 @@ def coords(args: argparse.Namespace) -> None:
         scaffold_seqs,
     )
 
-    if args.matches is not None:
+    gffrecords = list()
+    if args.matches:
         for coord in filter_coords(
             coords,
             args.min_pid,
             args.min_qcov,
             args.min_aln
         ):
-            print(
-                coord.as_gffrecord(source=args.mum_source),
-                file=args.matches
-            )
+            gffrecords.append(coord.as_gffrecord(source=args.mum_source))
 
     itrees: Dict[str, IntervalTree] = defaultdict(IntervalTree)
 
@@ -766,6 +974,11 @@ def coords(args: argparse.Namespace) -> None:
         )
         total_n_contigs += len(contigs_intervals[scaffold])
 
+    if args.extend:
+        extend_contigs(contigs_intervals, nstretches, scaffold_seqs)
+        find_remaining(contigs_intervals, nstretches, scaffold_seqs)
+        trim_contigs(contigs_intervals, scaffold_seqs)
+
     # This is just for padding the contig id numbers.
     ndigits = ceil(log10(total_n_contigs))
 
@@ -774,23 +987,36 @@ def coords(args: argparse.Namespace) -> None:
         contigs_intervals.items(),
         key=lambda t: t[0]
     ):
-        for contig in contigs:
-            assert len(contig.data) == 1, contig
-            gffrecord = contig.data[0].as_gffrecord()
-            gffrecord.type = "contig"
-            gffrecord.attributes.id = f"contig{index:0>{ndigits}}"
+        for contig in sorted(contigs, key=lambda x: x.begin):
+            if contig.data is None:
+                gffrecord = remaining_to_gffrecord(scaffold, contig,
+                                                   index, ndigits, args.source)
+            else:
+                gffrecord = coord_to_interval(contig, index,
+                                              ndigits, args.source)
 
-            # Because we split some of them, i want the alignment info in the
-            # attributes.
-            gffrecord.attributes.custom.update({
-                "scaffold_alignment_start": contig.data[0].rstart,
-                "scaffold_alignment_end": contig.data[0].rend,
-            })
-            gffrecord.attributes.note.append(
-                "Contigs aligned to scaffolds using MUMmer"
-            )
-
-            gffrecord.source = args.source
-            print(gffrecord, file=args.outfile)
+            gffrecords.append(gffrecord)
             index += 1
+
+    if args.print_nstretch:
+        for scaffold, nstretch in nstretches.items():
+            for n in nstretch:
+                gffrecords.append(gap_to_gffrecord(scaffold, n))
+
+    print("##gff-version 3", file=args.outfile)
+    for scaffold, sseq in sorted(
+        scaffold_seqs.items(),
+        key=lambda x: len(x[1]),
+        reverse=True,
+    ):
+        print(
+            f"##sequence-region   {scaffold} 1 {len(sseq)}",
+            file=args.outfile
+        )
+
+    for gffrecord in sorted(
+        gffrecords,
+        key=lambda x: (x.seqid, x.start, x.end, x.type)
+    ):
+        print(gffrecord, file=args.outfile)
     return

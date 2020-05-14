@@ -144,7 +144,7 @@ class Coords(NamedTuple):
 
     def as_gffrecord(
         self,
-        source="MUMmer:4.0.0.beta2",
+        source="MUMmer",
         type="nucleotide_match"
     ) -> GFF3Record:
         return GFF3Record(
