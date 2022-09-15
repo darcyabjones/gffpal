@@ -12,6 +12,7 @@ from gffpal.scripts.add_antifam import add_antifam, cli_add_antifam
 from gffpal.scripts.add_parents import add_parents, cli_add_parents
 from gffpal.scripts.select import select, cli_select
 from gffpal.scripts.coords_to_contigs import coords, cli_coords
+from gffpal.scripts.antismash2gff import antismash2gff, cli_antismash2gff
 
 logging.basicConfig(level=logging.ERROR)
 
@@ -88,6 +89,13 @@ def cli(prog, args):
 
     cli_coords(coord_subparser)
 
+    antismash2gff_subparser = subparsers.add_parser(
+        "antismash2gff",
+        help="Convert the AntiSMASH genbank output to gff3"
+    )
+
+    cli_antismash2gff(antismash2gff_subparser)
+
     parsed = parser.parse_args(args)
 
     if parsed.subparser_name is None:
@@ -118,6 +126,8 @@ def main():
             select(args)
         elif args.subparser_name == "coord2contig":
             coords(args)
+        elif args.subparser_name == "antismash2gff":
+            antismash2gff(args)
         else:
             raise ValueError("I shouldn't reach this point ever")
     except GPException as e:

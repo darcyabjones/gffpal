@@ -2,18 +2,21 @@ import sys
 import argparse
 
 from copy import deepcopy
+from collections import defaultdict
 
-from bio import SeqIO
-from bio import SeqFeature
+from Bio import SeqIO
+from Bio.SeqFeature import SeqFeature
 
 from typing import Iterable
-from typing import List, Sequence, Tuple
-from typing import Dict
+from typing import List, Sequence, Tuple, Set
+from typing import Mapping, Dict, DefaultDict, Counter
 from typing import Any, Optional
+from typing import NamedTuple
 from typing import TextIO
 
-from gffpal.gff import GFF3Record, Phase, Strand
+from gffpal.gff import GFF, GFF3Record, Phase, Strand
 from gffpal.attributes import GFF3Attributes, Target
+from gffpal.higher import fmap
 
 
 def cli_antismash2gff(parser):
@@ -22,6 +25,13 @@ def cli_antismash2gff(parser):
         type=argparse.FileType('r'),
         nargs="+",
         help="The antismash GBK files to convert."
+    )
+
+    parser.add_argument(
+        "-g", "--gff",
+        type=argparse.FileType('r'),
+        default=None,
+        help="Where to write the gff to."
     )
 
     parser.add_argument(
@@ -111,9 +121,46 @@ def pop_list(
         return tmp[0]
 
 
+class FeatPos(NamedTuple):
+
+    seqid: str
+    type: str
+    start: int
+    end: int
+    strand: Strand
+    id: Optional[str]
+
+    @classmethod
+    def from_gffrec(cls, rec: GFF3Record):
+        id_ = fmap(lambda x: getattr(x, "id"), rec.attributes)
+        return cls(
+            rec.seqid,
+            rec.type,
+            rec.start,
+            rec.end,
+            rec.strand,
+            id_
+        )
+
+
+def get_parent_map(gff: Sequence[str]) -> DefaultDict[FeatPos, Set[str]]:
+    parent_map: DefaultDict[FeatPos, Set[str]] = defaultdict(set)
+    for f in GFF.parse(gff):
+        parents_ = fmap(lambda x: getattr(x, "parent"), f.attributes)
+        if parents_ is None:
+            continue
+        elif len(parents_) == 0:
+            continue
+
+        feat = FeatPos.from_gffrec(f)
+        parent_map[feat].update(parents_)
+    return parent_map
+
+
 def cds_to_gff(
     seqid: str,
-    f: SeqFeature
+    f: SeqFeature,
+    parent_map: Optional[Mapping[FeatPos, Set[str]]],
 ) -> List[GFF3Record]:
     from copy import deepcopy
     cdss = []
@@ -178,15 +225,27 @@ def cds_to_gff(
         strand = int_to_strand(f.location.strand)
         cds_part = get_feat(start, end, strand, Phase.FIRST)
         cdss.append(cds_part)
+
+    if (len(attributes.parent) == 0) and (parent_map is not None):
+        counter: Counter[str] = Counter()
+        for cds_part in cdss:
+            loc = FeatPos.from_gffrec(cds_part)
+            counter.update(parent_map.get(loc, []))
+
+        if len(counter) > 0:
+            parent_ = counter.most_common(1)[0][0]
+            for cds_part in cdss:
+                cds_part.attributes.parent = [parent_]
     return cdss
 
 
 def gene_to_gff(
     seqid: str,
-    f: SeqFeature
+    f: SeqFeature,
+    parent_map: Optional[Mapping[FeatPos, Set[str]]],
 ) -> List[GFF3Record]:
     from copy import deepcopy
-    cdss = []
+    feats = []
 
     f = deepcopy(f)
     id_ = pop_list("ID", f.qualifiers)
@@ -240,24 +299,36 @@ def gene_to_gff(
             start = part.start.position
             end = part.end.position
             strand = int_to_strand(part.strand)
-            cds_part = get_feat(start, end, strand, Phase.NOT_CDS)
-            cdss.append(cds_part)
+            feat_part = get_feat(start, end, strand, Phase.NOT_CDS)
+            feats.append(feat_part)
     else:
         start = f.location.start.position
         end = f.location.end.position
         strand = int_to_strand(f.location.strand)
-        cds_part = get_feat(start, end, strand, Phase.NOT_CDS)
-        cdss.append(cds_part)
-    return cdss
+        feat_part = get_feat(start, end, strand, Phase.NOT_CDS)
+        feats.append(feat_part)
+
+    if (len(attributes.parent) == 0) and (parent_map is not None):
+        counter: Counter[str] = Counter()
+        for feat_part in feats:
+            loc = FeatPos.from_gffrec(feat_part)
+            counter.update(parent_map.get(loc, []))
+
+        if len(counter) > 0:
+            parent_ = counter.most_common(1)[0][0]
+            for feat_part in feats:
+                assert feat_part.attributes is not None
+                feat_part.attributes.parent = [parent_]
+    return feats
 
 
 def candcluster_to_gff(
     seqid: str,
     f: SeqFeature,
     region: str
-) -> GFF3Record:
+) -> List[GFF3Record]:
     from copy import deepcopy
-    cdss = []
+    cdss: List[GFF3Record] = []
 
     f = deepcopy(f)
 
@@ -334,9 +405,9 @@ def region_to_gff(
     seqid: str,
     f: SeqFeature,
     region: Optional[str] = None
-) -> GFF3Record:
+) -> List[GFF3Record]:
     from copy import deepcopy
-    cdss = []
+    cdss: List[GFF3Record] = []
 
     f = deepcopy(f)
 
@@ -415,9 +486,9 @@ def protocluster_to_gff(
     seqid: str,
     f: SeqFeature,
     region: str
-) -> GFF3Record:
+) -> List[GFF3Record]:
     from copy import deepcopy
-    cdss = []
+    cdss: List[GFF3Record] = []
 
     f = deepcopy(f)
 
@@ -496,7 +567,7 @@ def proto_core_to_gff(
     f: SeqFeature,
     region: str,
     i: int
-) -> Tuple[GFF3Record, int]:
+) -> Tuple[List[GFF3Record], int]:
     from copy import deepcopy
     cdss = []
 
@@ -588,7 +659,8 @@ def create_match(
     source = find_source(parts)
 
     attributes = deepcopy(parts[0].attributes)
-    attributes.id = str(region)
+    if attributes is not None:
+        attributes.id = str(region)
 
     parent = GFF3Record(
         seqid=seqid,
@@ -609,7 +681,7 @@ def cds_match_to_gff(
     seqid: str,
     f: SeqFeature,
     region: str
-) -> GFF3Record:
+) -> List[GFF3Record]:
     from copy import deepcopy
     f = deepcopy(f)
 
@@ -690,6 +762,7 @@ def cds_match_to_gff(
         parent = create_match(cdss, "protein_hmm_match", domain_id)
         parent.children = cdss
         for cds in cdss:
+            assert parent.attributes is not None
             cds.attributes.parent = [parent.attributes.id]
         cdss.append(parent)
     else:
@@ -706,7 +779,7 @@ def pfam_domain_to_gff(
     seqid: str,
     f: SeqFeature,
     region: str
-) -> GFF3Record:
+) -> List[GFF3Record]:
     from copy import deepcopy
     f = deepcopy(f)
 
@@ -788,6 +861,7 @@ def pfam_domain_to_gff(
         parent = create_match(cdss, "protein_hmm_match", domain_id)
         parent.children = cdss
         for cds in cdss:
+            assert parent.attributes is not None
             cds.attributes.parent = [parent.attributes.id]
         cdss.append(parent)
     else:
@@ -804,7 +878,7 @@ def asdomain_to_gff(
     seqid: str,
     f: SeqFeature,
     region: str
-) -> GFF3Record:
+) -> List[GFF3Record]:
     from copy import deepcopy
     f = deepcopy(f)
 
@@ -885,6 +959,7 @@ def asdomain_to_gff(
         parent = create_match(cdss, "protein_hmm_match", domain_id)
         parent.children = cdss
         for cds in cdss:
+            assert parent.attributes is not None
             cds.attributes.parent = [parent.attributes.id]
         cdss.append(parent)
     else:
@@ -901,7 +976,7 @@ def asmodule_to_gff(
     seqid: str,
     f: SeqFeature,
     region: str
-) -> GFF3Record:
+) -> List[GFF3Record]:
     from copy import deepcopy
     f = deepcopy(f)
 
@@ -970,9 +1045,10 @@ def asmodule_to_gff(
     return cdss
 
 
-def run(handle: TextIO):  # noqa: C901
+def run(handle: TextIO, parent_map: Optional[Mapping[FeatPos, Set[str]]]):  # noqa: C901
+    from os.path import basename
     seq = SeqIO.read(handle, "genbank")
-    region_id = handle.name[:-len(".gbk")]
+    region_id = basename(handle.name[:-len(".gbk")])
 
     orig_start = int(
         seq
@@ -983,7 +1059,6 @@ def run(handle: TextIO):  # noqa: C901
 
     features = deepcopy(seq.features)
     seqid = seq.id
-    print(seqid)
     for feature in features:
         feature.location += orig_start
 
@@ -1006,45 +1081,66 @@ def run(handle: TextIO):  # noqa: C901
 
     out = []
 
-    genes = [gene_to_gff(seqid, f)[0] for f in features if f.type == "gene"]
-    genes_dict = {g.attributes.id: g for g in genes}
+    genes = [
+        gene_to_gff(seqid, f, parent_map)[0]
+        for f in features if f.type == "gene"
+    ]
+    genes_dict = {
+        g.attributes.id: g
+        for g in genes
+        if g.attributes is not None and isinstance(g.attributes.id, str)
+    }
     out.extend(genes)
 
-    mrnas = [gene_to_gff(seqid, f)[0] for f in features if f.type == "mRNA"]
-    mrnas_dict = {m.attributes.id: m for m in mrnas}
+    mrnas = [
+        gene_to_gff(seqid, f, parent_map)[0]
+        for f in features if f.type == "mRNA"
+    ]
+    mrnas_dict = {
+        m.attributes.id: m
+        for m in mrnas
+        if m.attributes is not None and isinstance(m.attributes.id, str)
+    }
+    genes_and_mrnas_dict = dict(genes_dict, **mrnas_dict)
     out.extend(mrnas)
 
     for m in mrnas:
-        parent = genes_dict[m.attributes.parent[0]]
-        parent.children.append(m)
-        m.attributes.parent = [parent.attributes.id]
+        assert m.attributes is not None
+        for parent_id in m.attributes.parent:
+            parent = genes_dict.get(parent_id, None)
 
-    cdss = [cds_to_gff(seqid, f) for f in features if f.type == "CDS"]
+            if parent is not None:
+                m.add_parent(parent)
+
+    cdss = [
+        cds_to_gff(seqid, f, parent_map)
+        for f in features if f.type == "CDS"
+    ]
     for c in cdss:
-        cd = []
         for ci in c:
-            try:
-                # TODO make this more general
-                parent = mrnas_dict[ci.attributes.id.replace("SNOT", "SNOR")]
-                parent.children.append(ci)
-                ci.attributes.parent = [parent.attributes.id]
-                cd.append(ci)
-            except Exception:
-                pass
-        out.extend(cd)
+            assert ci.attributes is not None
+            for parent_id in ci.attributes.parent:
+                parent = genes_and_mrnas_dict.get(parent_id, None)
 
-    exons = [gene_to_gff(seqid, f) for f in features if f.type == "exon"]
+                if parent is not None:
+                    ci.add_parent(parent)
+
+            out.append(ci)
+
+    exons = [
+        gene_to_gff(seqid, f, parent_map)
+        for f in features if f.type == "exon"
+    ]
     for c in exons:
-        cd = []
         for ci in c:
-            try:
-                parent = mrnas_dict[ci.attributes.parent[0]]
-                parent.children.append(ci)
-                ci.attributes.parent = [parent.attributes.id]
-                cd.append(ci)
-            except Exception:
-                pass
-        out.extend(cd)
+            assert ci.attributes is not None
+            for parent_id in ci.attributes.parent:
+                parent = genes_and_mrnas_dict.get(parent_id, None)
+
+                if parent is not None:
+                    ci.add_parent(parent)
+
+            out.append(ci)
 
     regions = [
         region_to_gff(seqid, f, region_id)[0]
@@ -1130,10 +1226,13 @@ def run(handle: TextIO):  # noqa: C901
 
 
 def antismash2gff(args: argparse.Namespace) -> None:
+
+    parent_map = fmap(get_parent_map, args.gff)
+
     print("##gff-version 3", file=args.outfile)
     out = []
     for f in args.infiles:
-        x = run(f)
+        x = run(f, parent_map)
         out.extend(x)
 
     seen = set()
@@ -1141,12 +1240,16 @@ def antismash2gff(args: argparse.Namespace) -> None:
         if len(xi.parents) > 0:
             continue
 
+        printed_any = False
         for child in xi.traverse_children():
             if child in seen:
                 continue
             else:
                 seen.add(child)
 
-            print(xi, file=args.outfile)
-        print("###", file=args.outfile)
+            printed_any = True
+            print(child, file=args.outfile)
+
+        if printed_any:
+            print("###", file=args.outfile)
     return
