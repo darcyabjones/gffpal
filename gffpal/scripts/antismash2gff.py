@@ -1076,6 +1076,8 @@ def run(handle: TextIO, parent_map: Optional[Mapping[FeatPos, Set[str]]]):  # no
             "PFAM_domain",
             "aSDomain",
             "aSModule",
+            "three_prime_UTR",
+            "five_prime_UTR"
         ):
             raise ValueError(str(f))
 
